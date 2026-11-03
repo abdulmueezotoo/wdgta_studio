@@ -26,6 +26,18 @@ The official WDGTA logo is built in (white on dark backgrounds, black on light o
 
 Projects auto-save in the browser, and **Save project** downloads a `.wdgta.json` file you can open on another computer (add the audio file again there).
 
+## More tools
+
+- **Dictionary**: fixes for words the speech model often mishears (names, Pidgin, brand terms). Applied automatically to every new transcription; "Remember this fix" on Replace all adds to it.
+- **Host and guest**: click a word, then "Guest from here" or "Host from here" where the speaker changes. Guest screens are right-aligned, host screens left-aligned; names can show on the video.
+- **Chapters**: Episode Blueprint sections (Founder's Case File, Reality Check, Whiteboard Moment…) or mini-episode sections, marked on the timeline. Copy YouTube chapter timestamps, or show the chapter name on the video.
+- **Highlights**: suggests strong clip moments (questions, lessons, mistakes, decisions, numbers) to add as clips.
+- **Intro and closing cards**: branded cards added to every exported video.
+- **Music bed**: background music that dips automatically under speech.
+- **Carousel**: Reality Check / Founder Playbook / quote slides (1080×1350 PNG) in the brand style. Use *stars* for yellow words.
+- **Subtitles**: .srt and .vtt saved alongside each video.
+- **Caption prompt**: copies the transcript with WDGTA voice rules to paste into Claude for hooks, captions, titles and hashtags.
+
 ## Requirements
 
 - **Chrome or Edge (latest), on a laptop or desktop.** Video export uses the browser's built-in encoders (WebCodecs). Safari and Firefox are not supported for export.

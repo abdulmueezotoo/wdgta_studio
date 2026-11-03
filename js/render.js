@@ -18,7 +18,7 @@ export const FORMATS = {
   '16x9': { id: '16x9', label: '16:9', name: 'Landscape', use: 'YouTube, Facebook, LinkedIn', w: 1920, h: 1080 },
 };
 
-export const ELEMENTS = { text: 'Words', logo: 'Logo', title: 'Title', handle: 'Handle', progress: 'Progress line', note: 'Marker note' };
+export const ELEMENTS = { text: 'Words', logo: 'Logo', title: 'Title', handle: 'Handle', progress: 'Progress line', note: 'Marker note', chapter: 'Chapter label' };
 
 /**
  * Background themes. Dark backgrounds: white words, yellow key words.
@@ -168,6 +168,7 @@ export function defaultLayout(fmtId) {
     handle: { x: 0.085, y: 0.168, s: 1 },
     progress: { x: 0.085, y: 0.184, w: 0.83, s: 1 },
     note: { rel: true, x: 0.13, y: 0.7, s: 1 },
+    chapter: { x: 0.085, y: 0.205, s: 1 },
   };
   if (l) return {
     text: { x: 0.1, y: 0.5, s: 1 },
@@ -176,6 +177,7 @@ export function defaultLayout(fmtId) {
     handle: { x: 0.06, y: 0.9, s: 1 },
     progress: { x: 0, y: 0.992, w: 1, s: 1 },
     note: { rel: true, x: 0.13, y: 0.75, s: 1 },
+    chapter: { x: 0.06, y: 0.285, s: 1 },
   };
   return {
     text: { x: 0.085, y: 0.52, s: 1 },
@@ -184,6 +186,7 @@ export function defaultLayout(fmtId) {
     handle: { x: 0.085, y: 0.91, s: 1 },
     progress: { x: 0, y: 0.992, w: 1, s: 1 },
     note: { rel: true, x: 0.13, y: 0.75, s: 1 },
+    chapter: { x: 0.085, y: fmtId === '4x5' ? 0.205 : 0.235, s: 1 },
   };
 }
 
@@ -222,7 +225,8 @@ function wordClass(card, i) {
 
 /** Compute line layout for a card in a format. Cached per card object + format + style. */
 export function layoutCard(ctx, card, fmt, style, pos) {
-  const ck = [fmt.id, style.upper ? 1 : 0, (card.keys || []).join(','), pos.x, pos.y, pos.s, card.words.map(w => w.w).join(' ')].join('|');
+  const right = card._spk === 'guest' && style.align !== false;
+  const ck = [fmt.id, style.upper ? 1 : 0, right ? 'R' : 'L', (card.keys || []).join(','), pos.x, pos.y, pos.s, card.words.map(w => w.w).join(' ')].join('|');
   const per = layoutCache.get(card);
   if (per && per.ck === ck) return per.lay;
 
@@ -271,6 +275,12 @@ export function layoutCard(ctx, card, fmt, style, pos) {
     lay = build(base);
   }
   lay.x = g.left;
+  if (right) {
+    // guest: mirror the margin and right-align every line
+    lay.x = fmt.w - g.left - lay.maxWidth;
+    for (const ln of lay.lines) { const off = lay.maxWidth - ln.width; ln.items.forEach((it) => { it.x += off; }); }
+  }
+  lay.right = right;
   lay.y = g.centerY - lay.height / 2;
   lay.maxW = g.maxW;
   layoutCache.set(card, { ck, lay });
@@ -521,6 +531,19 @@ export function drawFrame(ctx, cards, t, fmt, style = {}) {
       ctx.restore();
       boxes.text = [lay.x, lay.y, Math.max(lay.maxWidth, W * 0.1), lay.height];
       drewText = true;
+      if (style.showNames && style.names) {
+        const nm = (card._spk === 'guest' ? style.names.guest : style.names.host) || '';
+        if (nm.trim()) {
+          ctx.save(); ctx.globalAlpha = alpha;
+          const px = monoSize(fmt);
+          ctx.font = `500 ${px}px ${MONO_FONT}`; ctx.fillStyle = theme.meta; ctx.textBaseline = 'alphabetic';
+          if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(px * 0.08)}px`;
+          const label = nm.trim().toUpperCase();
+          const lw = ctx.measureText(label).width;
+          ctx.fillText(label, lay.right ? lay.x + lay.maxWidth - lw : lay.x, lay.y - px * 0.9);
+          ctx.restore();
+        }
+      }
       ctx.save(); ctx.globalAlpha = alpha;
       drawNote(ctx, fmt, theme, card, t, L, boxes.text, boxes, rangeStart);
       ctx.restore();
@@ -531,7 +554,120 @@ export function drawFrame(ctx, cards, t, fmt, style = {}) {
     boxes.text = [g.left, g.centerY - g.base * 1.5, g.maxW * 0.6, g.base * 3];
   }
   drawBrand(ctx, fmt, t, style, theme, L, boxes);
+  drawChapterLabel(ctx, fmt, t, style, theme, L, boxes);
   return boxes;
+}
+
+function drawChapterLabel(ctx, fmt, t, style, theme, L, boxes) {
+  if (!style.showChapter || !style.chapters || !style.chapters.length) return;
+  let cur = null;
+  for (const c of style.chapters) if (c.t <= t + 1e-3 && (!cur || c.t >= cur.t)) cur = c;
+  if (!cur) return;
+  const { w: W, h: H } = fmt;
+  const p = L.chapter;
+  const px = Math.round(monoSize(fmt) * 1.05 * (p.s || 1));
+  const since = t - Math.max(cur.t, style.range ? style.range.start : 0);
+  ctx.save();
+  ctx.globalAlpha = ease(since / 0.35);
+  ctx.font = `500 ${px}px ${MONO_FONT}`; ctx.textBaseline = 'top';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(px * 0.1)}px`;
+  const x = p.x * W, y = p.y * H, label = String(cur.name).toUpperCase();
+  const rule = px * 1.6;
+  ctx.fillStyle = theme.meta; ctx.fillRect(x, y + px * 0.5, rule * ease(since / 0.5), Math.max(2, px * 0.1));
+  ctx.fillStyle = theme.text; ctx.fillText(label, x + rule + px * 0.6, y);
+  const w = rule + px * 0.6 + ctx.measureText(label).width;
+  ctx.restore();
+  boxes.chapter = [x, y, w, px * 1.2];
+}
+
+// ---------- intro / outro cards ----------
+function wrapWords(ctx, words, maxW) {
+  const lines = []; let cur = []; let width = 0;
+  const sp = ctx.measureText(' ').width;
+  for (const w of words) {
+    const ww = ctx.measureText(w.t).width;
+    if (cur.length && width + sp + ww > maxW) { lines.push({ items: cur, width }); cur = []; width = 0; }
+    cur.push({ ...w, x: cur.length ? width + sp : 0, ww });
+    width = cur.length > 1 ? width + sp + ww : ww;
+  }
+  if (cur.length) lines.push({ items: cur, width });
+  return lines;
+}
+/**
+ * Branded intro (kind 'intro') or closing card (kind 'outro'), t seconds into a card lasting dur seconds.
+ * style.bookends: { kicker, headline, sub, outroHeadline, outroSub }
+ */
+export function drawBookend(ctx, fmt, kind, t, dur, style = {}) {
+  const { w: W, h: H } = fmt;
+  const theme = THEMES[style.bg] || THEMES.ink;
+  const b = style.bookends || {};
+  ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, W, H);
+  const fadeOut = kind === 'intro' ? 1 - ease((t - (dur - 0.35)) / 0.35) : 1;
+  const fadeIn = ease(t / 0.4);
+  const unit = fmt.id === '16x9' ? H : W;
+  const M = fmt.id === '16x9' ? W * 0.08 : W * 0.085;
+  const maxW = fmt.id === '16x9' ? W * 0.62 : W - M * 2;
+  ctx.save();
+  ctx.globalAlpha = fadeIn * fadeOut;
+
+  const logo = style.logo || (theme.logo === 'black' ? style.logoDark : style.logoLight);
+  const kicker = (kind === 'intro' ? b.kicker : '') || '';
+  const headRaw = kind === 'intro' ? (b.headline || style.title || '') : (b.outroHeadline || 'Full episode on Spotify, Apple Podcasts & YouTube');
+  const sub = (kind === 'intro' ? b.sub : b.outroSub) || '';
+  const upper = style.upper !== false;
+  const words = [];
+  String(headRaw).split(/(\*[^*]+\*)/).forEach((part) => {
+    const hi = /^\*[^*]+\*$/.test(part);
+    (hi ? part.slice(1, -1) : part).split(/\s+/).filter(Boolean).forEach((w) => words.push({ t: upper ? w.toUpperCase() : w, hi }));
+  });
+
+  // size the headline to fit
+  let size = unit * (kind === 'intro' ? 0.11 : 0.085), lines;
+  for (let k = 0; k < 12; k++) {
+    ctx.font = `900 ${size}px ${HEAD_FONT}`;
+    lines = wrapWords(ctx, words, maxW);
+    if (lines.length * size * 1.02 <= H * 0.42 && lines.every((l) => l.width <= maxW)) break;
+    size *= 0.9;
+  }
+  const mono = Math.round(unit * 0.026);
+  const logoW = kind === 'outro' ? Math.min(maxW, unit * 0.62) : unit * 0.36;
+  const logoH = logo && logo.naturalWidth ? logoW * logo.naturalHeight / logo.naturalWidth : 0;
+  const blockH = (logoH ? logoH + unit * 0.06 : 0) + (kicker ? mono * 2.2 : 0) + lines.length * size * 1.02 + (sub ? mono * 2.6 : 0);
+  let y = (H - blockH) / 2;
+  if (logo && logo.complete && logo.naturalWidth) {
+    const ly = y + (1 - ease(t / 0.5)) * unit * 0.02;
+    ctx.drawImage(logo, M, ly, logoW, logoH);
+    y += logoH + unit * 0.06;
+  }
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(mono * 0.1)}px`;
+  ctx.textBaseline = 'top';
+  if (kicker) { ctx.font = `500 ${mono}px ${MONO_FONT}`; ctx.fillStyle = theme.meta; ctx.fillText(kicker.toUpperCase(), M, y); y += mono * 2.2; }
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.font = `900 ${size}px ${HEAD_FONT}`; ctx.textBaseline = 'alphabetic';
+  let n = 0;
+  for (const ln of lines) {
+    for (const it of ln.items) {
+      const k = ease((t - 0.25 - n * 0.09) / 0.25); n++;
+      if (k <= 0) continue;
+      ctx.globalAlpha = fadeIn * fadeOut * k;
+      const by = y + size * 0.8 + (1 - k) * size * 0.15;
+      if (it.hi && theme.keyStyle === 'block') {
+        const pad = size * 0.08;
+        ctx.fillStyle = theme.keyBg; ctx.fillRect(M + it.x - pad, by - size * 0.8, it.ww + pad * 2, size * 0.94);
+        ctx.fillStyle = theme.key;
+      } else ctx.fillStyle = it.hi ? theme.key : theme.text;
+      ctx.fillText(it.t, M + it.x, by);
+    }
+    y += size * 1.02;
+  }
+  ctx.globalAlpha = fadeIn * fadeOut * ease((t - 0.6 - n * 0.09) / 0.4);
+  if (sub) {
+    if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(mono * 0.1)}px`;
+    ctx.font = `500 ${mono}px ${MONO_FONT}`; ctx.fillStyle = theme.meta; ctx.textBaseline = 'top';
+    ctx.fillText(sub.toUpperCase(), M, y + mono * 1.2);
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  }
+  ctx.restore();
 }
 
 /** Make sure brand fonts are ready before drawing (canvas silently falls back otherwise). */

@@ -1,9 +1,13 @@
 // WDGTA Studio — app controller (upload → transcribe → edit → preview → clips → export).
 import {
   FORMATS, ELEMENTS, THEMES, buildCards, autoKeys, normalizeCard, drawFrame, cardAt, cardStart, cardEnd,
-  loadFonts, resolveLayout, defaultLayout, suggestClips,
+  loadFonts, resolveLayout, defaultLayout, suggestClips, drawBookend,
 } from './render.js';
-import { renderMp4, renderStill, exportSupported } from './exporter.js';
+import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter.js';
+import {
+  DEFAULT_DICTIONARY, applyDictionary, subtitleCues, toSRT, toVTT, CHAPTER_PRESETS, youtubeChapters,
+  assignSpeakers, findHighlights, captionPrompt, speechRanges, isSpeaking, SLIDE_TYPES, SERIES, drawSlide,
+} from './features.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'wdgta-studio:last-project';
@@ -14,12 +18,21 @@ const state = {
   title: '',
   cards: [],            // [{words:[{w,s,e,edited?}], keys:[i]}]
   clips: [],            // [{id, name, start, end, title}]
+  chapters: [],         // [{id, name, t}]
+  slides: [],           // carousel: [{id, type, text, sub}]
+  series: 'Reality Check',
   settings: {
     bg: 'ink',
     upper: true, handle: true, progress: true, showTitle: true, showLogo: true,
     logo: null,          // custom logo data URL; null = official logo
     maxKeys: 1,
     layouts: {},         // per-format element position overrides
+    showChapter: false,
+    names: { host: 'Abdul Mueez Otoo', guest: '' },
+    showNames: false,
+    bookends: { introOn: false, introSec: 3, kicker: '', headline: '', sub: '', outroOn: false, outroSec: 4, outroHeadline: '', outroSub: '' },
+    music: { vol: 0.25, duck: 0.3, name: '' },
+    exportSubs: true,
   },
   audioName: '',
   duration: 0,
@@ -40,6 +53,16 @@ let playClip = null;       // clip being played (stop at its end)
 let selClip = null;        // clip selected on the timeline
 const audio = new Audio();
 audio.preload = 'auto';
+let previewMode = null;    // null | {kind:'intro'|'outro', t0} | {kind:'slide', id}
+let musicBuf = null, musicURL = null;
+const musicEl = new Audio(); musicEl.loop = true; musicEl.preload = 'auto';
+let speech = [];           // speaking ranges, for music ducking
+let highlights = [];
+
+// ---- custom dictionary (shared by all projects in this browser) ----
+const DICT_KEY = 'wdgta-studio:dictionary';
+let dict = (() => { try { const d = JSON.parse(localStorage.getItem(DICT_KEY) || 'null'); return Array.isArray(d) ? d : DEFAULT_DICTIONARY.map((x) => ({ ...x })); } catch { return DEFAULT_DICTIONARY.map((x) => ({ ...x })); } })();
+function saveDict() { try { localStorage.setItem(DICT_KEY, JSON.stringify(dict)); } catch {} }
 
 // ---------------- helpers ----------------
 const fmtTime = (s, ms = false) => {
@@ -65,6 +88,11 @@ function styleObj(extra = {}) {
     logoLight, logoDark,
     layout: state.settings.layouts,
     range: { start: 0, end: totalDur() },
+    showChapter: state.settings.showChapter,
+    chapters: state.chapters,
+    names: state.settings.names,
+    showNames: state.settings.showNames,
+    bookends: state.settings.bookends,
     ...extra,
   };
 }
@@ -77,7 +105,9 @@ function persist() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
 }
 function changed() {
-  persist(); renderCards(); renderClips(); drawPreview(); tlInvalidate();
+  assignSpeakers(state.cards);
+  speech = speechRanges(state.cards);
+  persist(); renderCards(); renderChapters(); renderSlides(); renderClips(); drawPreview(); tlInvalidate();
   $('btnSave').disabled = !state.cards.length; $('btnExportTop').disabled = !state.cards.length;
 }
 
@@ -158,8 +188,10 @@ async function transcribe() {
       $('btnTranscribe').disabled = false;
       if (!m.words.length) { errorBox($('audioError'), 'No speech was found in this file.'); return; }
       undoStack = [];
-      state.cards = buildCards(m.words, { keys: state.settings.maxKeys });
-      state.clips = [];
+      const fixed = applyDictionary(m.words, dict);
+      state.cards = buildCards(fixed.words, { keys: state.settings.maxKeys });
+      state.clips = []; state.chapters = []; state.slides = [];
+      if (fixed.count) notice(`Dictionary fixed ${fixed.count} word${fixed.count > 1 ? 's' : ''} automatically.`);
       enterWorkspace();
     }
   };
@@ -185,12 +217,19 @@ function renderCards() {
   const frag = document.createDocumentFragment();
   state.cards.forEach((c, ci) => {
     const li = document.createElement('li');
-    li.className = 'card'; li.dataset.c = ci;
+    li.className = 'card' + (c._spk === 'guest' ? ' spk-guest' : '') + (c.turn === 'guest' ? ' turn-guest' : '');
+    li.dataset.c = ci;
     const tb = document.createElement('button');
     tb.className = 'card-time'; tb.type = 'button'; tb.dataset.seek = cardStart(c);
     tb.textContent = fmtTime(cardStart(c), true);
     li.appendChild(tb);
     const wrap = document.createElement('div'); wrap.className = 'card-words';
+    if (c.turn) {
+      const chip = document.createElement('span');
+      chip.className = 'turn-chip ' + c.turn;
+      chip.textContent = (c.turn === 'guest' ? (state.settings.names.guest || 'Guest') : (state.settings.names.host || 'Host')) + ' speaks';
+      wrap.appendChild(chip);
+    }
     c.words.forEach((wd, wi) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'w'; b.dataset.c = ci; b.dataset.w = wi;
@@ -322,6 +361,9 @@ function replaceAll() {
     }
   }
   if (!n) undoStack.pop();
+  if (n && repl && $('replRemember').checked && !dict.some((d) => d.from.toLowerCase() === find.toLowerCase())) {
+    dict.push({ from: find, to: repl }); saveDict(); renderDict();
+  }
   $('replText').value = '';
   $('replText').placeholder = n ? `Replaced ${n}` : 'No matches';
   changed();
@@ -332,8 +374,9 @@ const canvas = $('canvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 let pScale = 0.5, lastBoxes = {};
 function isFull() { return document.fullscreenElement === $('stage'); }
+function previewFmt() { return previewMode && previewMode.kind === 'slide' ? { id: 'slide', w: 1080, h: 1350 } : FORMATS[state.fmt]; }
 function resizeCanvas() {
-  const f = FORMATS[state.fmt];
+  const f = previewFmt();
   const cap = isFull() ? Math.max(screen.width, screen.height) : 720;
   pScale = Math.min(1, cap / Math.max(f.w, f.h)) * Math.min(2, window.devicePixelRatio || 1);
   pScale = Math.min(pScale, 1);
@@ -347,6 +390,7 @@ function previewStyle() {
 }
 function drawPreview() {
   if (!state.cards.length) return;
+  if (previewMode) return drawPreviewMode();
   const f = FORMATS[state.fmt];
   ctx.setTransform(pScale, 0, 0, pScale, 0, 0);
   lastBoxes = drawFrame(ctx, state.cards, audio.currentTime || 0, f, previewStyle());
@@ -380,6 +424,7 @@ function markNow() {
 }
 function tick() {
   if (playClip && audio.currentTime >= playClip.end) { audio.pause(); stopClipPlayback(); }
+  syncMusic();
   drawPreview(); updateTime(); markNow(); drawTimeline(true);
   if (!audio.paused) requestAnimationFrame(tick);
 }
@@ -397,10 +442,12 @@ function setPlayLabels() {
 }
 function togglePlay() {
   if (!audioFile) return;
+  if (previewMode) exitPreviewMode();
   if (audio.paused) { audio.play(); requestAnimationFrame(tick); } else audio.pause();
 }
 audio.addEventListener('play', setPlayLabels);
-audio.addEventListener('pause', setPlayLabels);
+audio.addEventListener('pause', () => { setPlayLabels(); musicEl.pause(); });
+audio.addEventListener('seeked', () => { if (musicBuf) musicEl.currentTime = (audio.currentTime || 0) % (musicBuf.duration || 1); });
 audio.addEventListener('ended', setPlayLabels);
 
 function buildTabs() {
@@ -429,7 +476,7 @@ function toOut(e) {
   return { x: (e.clientX - r.left) / r.width * f.w, y: (e.clientY - r.top) / r.height * f.h };
 }
 function hitTest(p) {
-  const order = ['note', 'logo', 'title', 'handle', 'progress', 'text'];
+  const order = ['note', 'chapter', 'logo', 'title', 'handle', 'progress', 'text'];
   for (const k of order) {
     const b = lastBoxes[k]; if (!b) continue;
     const pad = 14;
@@ -444,7 +491,7 @@ function setEl(name, patch) {
 }
 let drag = null;
 canvas.addEventListener('pointerdown', (e) => {
-  if (!state.cards.length || isFull()) return;
+  if (!state.cards.length || isFull() || previewMode) return;
   const p = toOut(e);
   const hit = hitTest(p);
   selEl = hit; updateElbar(); drawPreview();
@@ -524,6 +571,7 @@ function renderClips() {
           <button class="btn small ghost" data-act="start" type="button">Start here</button>
           <button class="btn small ghost" data-act="end" type="button">End here</button>
           <input type="text" class="clip-title" aria-label="Title shown on this clip" placeholder="On-screen title (optional)">
+          <button class="btn small ghost" data-act="prompt" type="button" title="Copy a caption-writing prompt for this clip">Caption prompt</button>
           <button class="btn small ghost danger" data-act="del" type="button">Remove</button>
         </div>`;
       const name = li.querySelector('input');
@@ -552,6 +600,8 @@ function clipAction(act, i) {
     if (t <= c.start + 1) return; snapshot(); c.end = +t.toFixed(2); changed();
   } else if (act === 'del') {
     snapshot(); state.clips.splice(i, 1); delete state.exportWhat[c.id]; changed();
+  } else if (act === 'prompt') {
+    copyPrompt('a short clip', c.title || c.name, c.start, c.end, $('capOut'), $('capHint'), true);
   }
 }
 function stopClipPlayback() { playClip = null; renderClips(); drawPreview(); }
@@ -638,9 +688,13 @@ async function doExport() {
       let writable = null;
       if (dir) writable = await (await dir.getFileHandle(name, { create: true })).createWritable();
       const start = performance.now();
+      const bk = state.settings.bookends;
+      const intro = bk.introOn ? +bk.introSec || 3 : 0, outro = bk.outroOn ? +bk.outroSec || 4 : 0;
       const res = await renderMp4({
-        cards: state.cards, style: styleObj({ title: state.settings.showTitle ? tg.title : '' }), fmt: f, audioBuffer: buf,
-        start: tg.start, end: tg.end, writable, signal: exportAbort.signal,
+        cards: state.cards, style: styleObj({ title: state.settings.showTitle ? tg.title : '', bookends: { ...bk, headline: bk.headline || (tg.key === 'full' ? '' : tg.title) } }), fmt: f, audioBuffer: buf,
+        start: tg.start, end: tg.end, intro, outro, speech,
+        music: musicBuf ? { buffer: musicBuf, vol: state.settings.music.vol, duck: state.settings.music.duck } : null,
+        writable, signal: exportAbort.signal,
         onProgress: (p) => {
           const el = (performance.now() - start) / 1000;
           const left = p > 0.03 ? ` · about ${fmtTime(el / p * (1 - p))} left on this one` : '';
@@ -650,6 +704,16 @@ async function doExport() {
       });
       if (res.blob) triggerDownload(res.blob, name);
       if (res.audioCodec === 'opus' || res.videoCodec === 'vp9') compat = true;
+    }
+    if (state.settings.exportSubs) {
+      const bk = state.settings.bookends;
+      const intro = bk.introOn ? +bk.introSec || 3 : 0;
+      for (const tg of targets) {
+        const cues = subtitleCues(state.cards, tg.start, tg.end, intro);
+        const nm = `${base}${tg.key === 'full' ? '' : '_' + tg.key}`;
+        await saveText(dir, `${nm}.srt`, toSRT(cues), 'application/x-subrip');
+        await saveText(dir, `${nm}.vtt`, toVTT(cues), 'text/vtt');
+      }
     }
     const secs = (performance.now() - t0) / 1000;
     $('exportHint').textContent = (dir ? `Saved ${jobs.length} video${jobs.length > 1 ? 's' : ''} to the folder you chose in ${fmtTime(secs)}.` : `Made ${jobs.length} video${jobs.length > 1 ? 's' : ''} in ${fmtTime(secs)}. Check your Downloads folder.`) +
@@ -694,7 +758,14 @@ function loadState(data) {
   state.title = data.title || '';
   state.cards = data.cards.map(normalizeCard);
   state.clips = Array.isArray(data.clips) ? data.clips : [];
+  state.chapters = Array.isArray(data.chapters) ? data.chapters : [];
+  state.slides = Array.isArray(data.slides) ? data.slides : [];
+  state.series = data.series || 'Reality Check';
+  const base = { names: state.settings.names, bookends: state.settings.bookends, music: state.settings.music };
   state.settings = { ...state.settings, ...(data.settings || {}) };
+  state.settings.names = { ...base.names, ...(data.settings?.names || {}) };
+  state.settings.bookends = { ...base.bookends, ...(data.settings?.bookends || {}) };
+  state.settings.music = { ...base.music, ...(data.settings?.music || {}), name: '' };
   state.settings.layouts ||= {};
   state.audioName = data.audioName || '';
   state.duration = data.duration || 0;
@@ -716,6 +787,19 @@ function applySettingsUI() {
   $('optTitle').checked = state.settings.showTitle;
   $('optLogo').checked = state.settings.showLogo !== false;
   $('optKeys').value = String(state.settings.maxKeys || 1);
+  $('optChapter').checked = !!state.settings.showChapter;
+  $('optNames').checked = !!state.settings.showNames;
+  $('nameHost').value = state.settings.names.host || '';
+  $('nameGuest').value = state.settings.names.guest || '';
+  const bk = state.settings.bookends;
+  $('bkIntro').checked = !!bk.introOn; $('bkIntroSec').value = String(bk.introSec || 3);
+  $('bkKicker').value = bk.kicker || ''; $('bkHead').value = bk.headline || ''; $('bkSub').value = bk.sub || '';
+  $('bkOutro').checked = !!bk.outroOn; $('bkOutroSec').value = String(bk.outroSec || 4);
+  $('bkOHead').value = bk.outroHeadline || ''; $('bkOSub').value = bk.outroSub || '';
+  $('musicVol').value = Math.round(state.settings.music.vol * 100); $('musicVolOut').textContent = `${$('musicVol').value}%`;
+  $('musicDuck').value = Math.round(state.settings.music.duck * 100); $('musicDuckOut').textContent = `${$('musicDuck').value}%`;
+  $('exSubs').checked = state.settings.exportSubs !== false;
+  $('cSeries').value = state.series;
   buildSwatches();
   $(state.dest === 'download' ? 'destDownload' : 'destFolder').checked = true;
   setLogo(state.settings.logo);
@@ -731,7 +815,8 @@ function setLogo(dataUrl) {
 }
 function newProject() {
   audio.pause();
-  state.title = ''; state.cards = []; state.clips = []; state.audioName = ''; state.duration = 0;
+  state.title = ''; state.cards = []; state.clips = []; state.chapters = []; state.slides = []; state.audioName = ''; state.duration = 0;
+  previewMode = null; highlights = [];
   state.exportWhat = { full: true };
   audioFile = null; audioBuf48 = null; sel = null; selEl = null; undoStack = [];
   if (audioURL) URL.revokeObjectURL(audioURL); audioURL = null; audio.removeAttribute('src');
@@ -757,6 +842,7 @@ function buildSwatches() {
 
 // ---------------- inspector tabs ----------------
 function setTab(name) {
+  if (name !== 'carousel' && previewMode && previewMode.kind === 'slide') exitPreviewMode();
   document.querySelectorAll('#insTabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   document.querySelectorAll('.tabpanel').forEach((p) => { p.hidden = p.dataset.panel !== name; });
 }
@@ -806,6 +892,14 @@ function buildTimelineStatic() {
     c.fillStyle = '#3A3833'; c.fillRect(x, 12, 1, 8);
     c.fillStyle = '#8C887F'; c.fillText(fmtTime(t), x + 3, 1);
   }
+  // chapters on the ruler
+  c.font = '600 10px "Archivo", sans-serif';
+  for (const ch of state.chapters) {
+    const x = Math.round(tX(ch.t)) + 0.5;
+    c.fillStyle = '#E8512A'; c.fillRect(x, 0, 2, 20);
+    c.fillStyle = '#E7ECF2'; c.fillText(ch.name, x + 5, 9);
+  }
+  c.font = '400 10px "IBM Plex Mono", monospace';
   // clips
   const [cy, ch] = TL.clips;
   c.font = '500 11px "Archivo", sans-serif'; c.textBaseline = 'middle';
@@ -824,7 +918,7 @@ function buildTimelineStatic() {
   state.cards.forEach((cd, i) => {
     const nx = state.cards[i + 1];
     const x0 = tX(cardStart(cd)), x1 = Math.max(x0 + 2, tX(nx ? cardStart(nx) : cardEnd(cd))) - 1;
-    c.fillStyle = cd.note || cd.words.some((w) => w.mark) ? '#3B2A22' : '#2C2A26';
+    c.fillStyle = cd.note || cd.words.some((w) => w.mark) ? '#3B2A22' : cd._spk === 'guest' ? '#26303B' : '#2C2A26';
     c.fillRect(x0, sy, x1 - x0, sh);
     if (x1 - x0 > 24) {
       c.save(); c.beginPath(); c.rect(x0 + 4, sy, x1 - x0 - 8, sh); c.clip();
@@ -882,6 +976,7 @@ function tlHit(x, y) {
 }
 function seekTo(t) {
   if (playClip) stopClipPlayback();
+  if (previewMode) exitPreviewMode();
   audio.currentTime = Math.max(0, Math.min(totalDur(), t));
   updateTime(); drawPreview(); markNow(); drawTimeline();
 }
@@ -1005,6 +1100,288 @@ tlScroll.addEventListener('wheel', (e) => {
 }, { passive: false });
 new ResizeObserver(() => { tlStatic = null; drawTimeline(); }).observe(tlScroll);
 
+// ---------------- dictionary ----------------
+function renderDict() {
+  $('dictCount').textContent = `(${dict.length})`;
+  $('dictList').replaceChildren(...dict.map((d, i) => {
+    const li = document.createElement('li');
+    const a = document.createElement('input'); a.type = 'text'; a.value = d.from; a.placeholder = 'Heard as'; a.setAttribute('aria-label', 'Heard as');
+    const arrow = document.createElement('span'); arrow.className = 'arrow'; arrow.textContent = '→';
+    const b = document.createElement('input'); b.type = 'text'; b.value = d.to; b.placeholder = 'Write as'; b.setAttribute('aria-label', 'Write as');
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'x-btn'; x.textContent = '×'; x.setAttribute('aria-label', 'Remove this fix');
+    a.onchange = () => { d.from = a.value; saveDict(); };
+    b.onchange = () => { d.to = b.value; saveDict(); };
+    x.onclick = () => { dict.splice(i, 1); saveDict(); renderDict(); };
+    li.append(a, arrow, b, x);
+    return li;
+  }));
+}
+function applyDictToProject() {
+  if (!state.cards.length) return;
+  // work on the whole transcript so phrases that run across two screens are caught too
+  const flat = state.cards.flatMap((c, ci) => c.words.map((w, wi) => ({ ...w, _c: ci, _key: c.keys.includes(wi) })));
+  const r = applyDictionary(flat, dict);
+  if (!r.count) { notice('Nothing to fix: no dictionary words found.'); return; }
+  snapshot();
+  const cards = state.cards.map((c) => ({ ...c, words: [], keys: [] }));
+  for (const w of r.words) {
+    const c = cards[w._c];
+    if (w._key) c.keys.push(c.words.length);
+    const { _c, _key, ...clean } = w;
+    c.words.push(clean);
+  }
+  state.cards = cards.filter((c) => c.words.length);
+  for (const c of state.cards) if (!c.keys.length) c.keys = autoKeys(c.words, state.settings.maxKeys);
+  notice(`Dictionary fixed ${r.count} word${r.count > 1 ? 's' : ''}.`);
+  changed();
+}
+
+// ---------------- speakers ----------------
+function setTurn(who) {
+  if (!sel) return; snapshot();
+  const c = state.cards[sel.c];
+  assignSpeakers(state.cards);
+  const prev = sel.c > 0 ? state.cards[sel.c - 1]._spk : 'host';
+  if (who === prev) delete c.turn; else c.turn = who;
+  // a later identical marker is now redundant
+  changed();
+}
+
+// ---------------- preview modes: intro / closing card / carousel slide ----------------
+function startBookendPreview(kind) {
+  if (!state.cards.length) return;
+  audio.pause();
+  previewMode = { kind, t0: performance.now() };
+  resizeCanvas();
+  const dur = kind === 'intro' ? +state.settings.bookends.introSec || 3 : +state.settings.bookends.outroSec || 4;
+  const loop = () => {
+    if (!previewMode || previewMode.kind !== kind) return;
+    drawPreviewMode();
+    if ((performance.now() - previewMode.t0) / 1000 < dur + 0.6) requestAnimationFrame(loop);
+    else exitPreviewMode();
+  };
+  requestAnimationFrame(loop);
+}
+function drawPreviewMode() {
+  const m = previewMode;
+  if (m.kind === 'slide') {
+    const i = state.slides.findIndex((x) => x.id === m.id);
+    if (i < 0) return exitPreviewMode();
+    ctx.setTransform(canvas.width / 1080, 0, 0, canvas.height / 1350, 0, 0);
+    drawSlide(ctx, state.slides[i], i, state.slides.length, deck());
+    return;
+  }
+  const f = FORMATS[state.fmt];
+  const dur = m.kind === 'intro' ? +state.settings.bookends.introSec || 3 : +state.settings.bookends.outroSec || 4;
+  ctx.setTransform(pScale, 0, 0, pScale, 0, 0);
+  drawBookend(ctx, f, m.kind, Math.min(dur, (performance.now() - m.t0) / 1000), dur, styleObj());
+}
+function exitPreviewMode() {
+  previewMode = null;
+  show($('cPrevExit'), false);
+  document.querySelectorAll('.slide-list li.is-sel').forEach((li) => li.classList.remove('is-sel'));
+  resizeCanvas();
+}
+
+// ---------------- chapters ----------------
+function buildChapterPresets() {
+  const sel = $('chapPreset');
+  sel.replaceChildren();
+  for (const [group, names] of Object.entries(CHAPTER_PRESETS)) {
+    const og = document.createElement('optgroup'); og.label = group;
+    names.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n; og.appendChild(o); });
+    sel.appendChild(og);
+  }
+  const o = document.createElement('option'); o.value = ''; o.textContent = 'Custom name…'; sel.appendChild(o);
+}
+function renderChapters() {
+  const list = [...state.chapters].sort((a, b) => a.t - b.t);
+  state.chapters = list;
+  $('chapList').replaceChildren(...list.map((ch, i) => {
+    const li = document.createElement('li');
+    const t = document.createElement('button'); t.type = 'button'; t.className = 't'; t.textContent = fmtTime(ch.t); t.title = 'Jump here';
+    t.onclick = () => seekTo(ch.t);
+    const name = document.createElement('input'); name.type = 'text'; name.value = ch.name; name.setAttribute('aria-label', 'Chapter name');
+    name.onchange = () => { ch.name = name.value || 'Chapter'; persist(); tlInvalidate(); drawPreview(); };
+    const here = document.createElement('button'); here.type = 'button'; here.className = 'btn small ghost'; here.textContent = 'Move here';
+    here.onclick = () => { ch.t = +(audio.currentTime || 0).toFixed(2); changed(); };
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'x-btn'; x.textContent = '×'; x.setAttribute('aria-label', 'Remove chapter');
+    x.onclick = () => { state.chapters.splice(i, 1); changed(); };
+    li.append(t, name, here, x);
+    return li;
+  }));
+  if (!list.length) $('chapList').innerHTML = '<li class="clip-empty">No chapters yet.</li>';
+}
+function addChapter() {
+  let name = $('chapPreset').value;
+  if (!name) name = 'New chapter';
+  state.chapters.push({ id: uid(), name, t: +(audio.currentTime || 0).toFixed(2) });
+  // move the picker on to the next preset in the blueprint
+  const opts = [...$('chapPreset').querySelectorAll('option')];
+  const i = opts.findIndex((o) => o.value === $('chapPreset').value);
+  if (i >= 0 && i < opts.length - 2) $('chapPreset').value = opts[i + 1].value;
+  changed();
+}
+async function copyText(text, out, hint, okMsg) {
+  out.value = text; show(out, true);
+  try { await navigator.clipboard.writeText(text); hint.textContent = okMsg; }
+  catch { out.select(); hint.textContent = 'Select the text below and copy it (Ctrl+C).'; }
+}
+function copyYouTube() {
+  if (!state.chapters.length) { $('chapWarn').textContent = 'Add some chapters first.'; return; }
+  const { text, warnings } = youtubeChapters(state.chapters, totalDur());
+  copyText(text, $('chapOut'), $('chapWarn'), 'Copied. Paste it into the YouTube description.').then(() => {
+    if (warnings.length) $('chapWarn').textContent += ' ' + warnings.join(' ');
+  });
+}
+
+// ---------------- highlights ----------------
+function renderHighlights() {
+  if (!highlights.length) { $('hlList').innerHTML = '<li class="clip-empty">No strong moments found. Try a different length.</li>'; return; }
+  $('hlList').replaceChildren(...highlights.map((h, i) => {
+    const li = document.createElement('li');
+    const hook = document.createElement('p'); hook.className = 'hl-hook'; hook.textContent = `“${h.hook}”`;
+    const meta = document.createElement('div'); meta.className = 'hl-meta';
+    const tm = document.createElement('span'); tm.className = 'mono tag'; tm.textContent = `${fmtTime(h.start)}–${fmtTime(h.end)} · ${Math.round(h.end - h.start)} s`;
+    meta.appendChild(tm);
+    h.tags.forEach((t) => { const g = document.createElement('span'); g.className = 'tag'; g.textContent = t; meta.appendChild(g); });
+    const row = document.createElement('div'); row.className = 'btn-row';
+    const play = document.createElement('button'); play.type = 'button'; play.className = 'btn small'; play.textContent = 'Play';
+    play.onclick = () => { if (!audioFile) return; playClip = { id: 'hl' + i, start: h.start, end: h.end, title: '' }; audio.currentTime = h.start; audio.play(); requestAnimationFrame(tick); };
+    const add = document.createElement('button'); add.type = 'button'; add.className = 'btn small ghost'; add.textContent = 'Add as clip';
+    add.onclick = () => {
+      snapshot();
+      const c = { id: uid(), name: `Highlight ${state.clips.length + 1}`, start: +h.start.toFixed(2), end: +h.end.toFixed(2), title: '' };
+      state.clips.push(c); state.clips.sort((a, b) => a.start - b.start); state.exportWhat[c.id] = true;
+      add.textContent = 'Added'; add.disabled = true; changed();
+    };
+    row.append(play, add);
+    li.append(hook, meta, row);
+    return li;
+  }));
+}
+
+// ---------------- carousel ----------------
+function deck() {
+  return { series: state.series === 'Quote' ? '' : state.series, bg: state.settings.bg, logo: logoImg, logoLight, logoDark, upper: state.settings.upper };
+}
+function sentenceAt(ci, wi) {
+  const words = allWords();
+  let idx = 0; for (let k = 0; k < ci; k++) idx += state.cards[k].words.length; idx += wi;
+  let a = idx, b = idx;
+  while (a > 0 && !/[.?!]["')\]]?$/.test(words[a - 1].w)) a--;
+  while (b < words.length - 1 && !/[.?!]["')\]]?$/.test(words[b].w)) b++;
+  return words.slice(a, b + 1).map((w) => w.w).join(' ');
+}
+function addSlide(type, text = '', sub = '') {
+  const defaults = { cover: ['Are you solving the *right* problem?', ''], quote: ['', state.settings.names.guest || state.settings.names.host], point: ['', ''], end: ['', ''] };
+  const [dt, ds] = defaults[type] || ['', ''];
+  const s = { id: uid(), type, text: text || dt, sub: sub || ds };
+  if (type === 'cover') state.slides.unshift(s); else if (type !== 'end' && state.slides.length && state.slides[state.slides.length - 1].type === 'end') state.slides.splice(state.slides.length - 1, 0, s); else state.slides.push(s);
+  persist(); renderSlides(); previewSlide(s.id);
+}
+function previewSlide(id) {
+  previewMode = { kind: 'slide', id };
+  show($('cPrevExit'), true);
+  audio.pause();
+  resizeCanvas();
+  document.querySelectorAll('.slide-list li').forEach((li) => li.classList.toggle('is-sel', li.dataset.id === id));
+}
+function renderSlides() {
+  const ol = $('slideList');
+  if (!state.slides.length) { ol.innerHTML = '<li class="clip-empty">No slides yet. Start with a cover, or click a word in the transcript and press "Add to carousel".</li>'; return; }
+  let pointNo = 0;
+  ol.replaceChildren(...state.slides.map((sl, i) => {
+    if (sl.type === 'point') sl.num = ++pointNo;
+    const li = document.createElement('li'); li.dataset.id = sl.id;
+    if (previewMode && previewMode.kind === 'slide' && previewMode.id === sl.id) li.classList.add('is-sel');
+    const head = document.createElement('div'); head.className = 'slide-head';
+    const n = document.createElement('span'); n.className = 'n'; n.textContent = String(i + 1).padStart(2, '0');
+    const type = document.createElement('select'); type.setAttribute('aria-label', 'Slide type');
+    Object.entries(SLIDE_TYPES).forEach(([k, v]) => { const o = document.createElement('option'); o.value = k; o.textContent = v; type.appendChild(o); });
+    type.value = sl.type;
+    type.onchange = () => { sl.type = type.value; persist(); renderSlides(); previewSlide(sl.id); };
+    const sp = document.createElement('span'); sp.className = 'sp';
+    const mk = (label, title, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'x-btn'; b.textContent = label; b.title = title; b.setAttribute('aria-label', title); b.onclick = (e) => { e.stopPropagation(); fn(); }; return b; };
+    head.append(n, type, sp,
+      mk('↑', 'Move up', () => { if (i > 0) { [state.slides[i - 1], state.slides[i]] = [state.slides[i], state.slides[i - 1]]; persist(); renderSlides(); previewSlide(sl.id); } }),
+      mk('↓', 'Move down', () => { if (i < state.slides.length - 1) { [state.slides[i + 1], state.slides[i]] = [state.slides[i], state.slides[i + 1]]; persist(); renderSlides(); previewSlide(sl.id); } }),
+      mk('×', 'Remove slide', () => { state.slides.splice(i, 1); persist(); if (previewMode?.id === sl.id) exitPreviewMode(); renderSlides(); }));
+    const txt = document.createElement('textarea'); txt.rows = 2; txt.value = sl.text;
+    txt.placeholder = { cover: 'Big headline', quote: 'The quote', point: 'The point, in a few words', end: 'Full episode on Spotify, Apple Podcasts & YouTube' }[sl.type];
+    txt.oninput = () => { sl.text = txt.value; persist(); if (previewMode?.id === sl.id) drawPreview(); };
+    const sub = document.createElement('input'); sub.type = 'text'; sub.value = sl.sub || '';
+    sub.placeholder = { cover: 'Line under the headline (optional)', quote: 'Who said it', point: 'Explanation (optional)', end: 'Follow @wedeygothrougham for more founder decisions.' }[sl.type];
+    sub.oninput = () => { sl.sub = sub.value; persist(); if (previewMode?.id === sl.id) drawPreview(); };
+    li.addEventListener('focusin', () => { if (!(previewMode && previewMode.id === sl.id)) previewSlide(sl.id); });
+    li.addEventListener('click', () => { if (!(previewMode && previewMode.id === sl.id)) previewSlide(sl.id); });
+    li.append(head, txt, sub);
+    return li;
+  }));
+}
+async function exportSlides() {
+  if (!state.slides.length) { $('cHint').textContent = 'Add some slides first.'; return; }
+  await loadFonts();
+  let dir = null;
+  try { dir = await pickFolder(); } catch (e) { if (e.name === 'AbortError') return; }
+  const base = slug((state.series || 'carousel') + ' ' + (state.title || ''));
+  for (let i = 0; i < state.slides.length; i++) {
+    let pointNo = 0; state.slides.forEach((s) => { if (s.type === 'point') s.num = ++pointNo; });
+    const blob = await renderSlide(state.slides[i], i, state.slides.length, deck());
+    const name = `${base}_${String(i + 1).padStart(2, '0')}.png`;
+    if (dir) { const w = await (await dir.getFileHandle(name, { create: true })).createWritable(); await w.write(blob); await w.close(); }
+    else triggerDownload(blob, name);
+  }
+  $('cHint').textContent = `Saved ${state.slides.length} slides${dir ? ' to the folder you chose' : ''}. Post them in order as one carousel.`;
+}
+
+// ---------------- captions ----------------
+function copyPrompt(kind, title, start, end, out, hint, switchTab = false) {
+  const text = allWords().filter((w) => w.s >= start - 0.01 && w.e <= end + 0.01).map((w) => w.w).join(' ');
+  if (!text) { hint.textContent = 'No words in that part of the recording.'; return; }
+  const guest = state.settings.names.guest ? state.settings.names.guest : '';
+  const prompt = captionPrompt({ title, kind, text, duration: end - start, guest });
+  if (switchTab) setTab('export');
+  $('capOut').closest('details').open = true;
+  copyText(prompt, out, hint, 'Copied. Paste it into a chat with Claude.');
+}
+
+// ---------------- subtitles / text files ----------------
+async function saveText(dir, name, text, type) {
+  const blob = new Blob([text], { type });
+  if (dir) { const w = await (await dir.getFileHandle(name, { create: true })).createWritable(); await w.write(blob); await w.close(); }
+  else triggerDownload(blob, name);
+}
+
+// ---------------- music bed ----------------
+async function setMusic(file) {
+  try {
+    musicBuf = await decodeAll(file, 48000);
+  } catch { notice('That music file could not be read. Try an MP3 or WAV.'); return; }
+  if (musicURL) URL.revokeObjectURL(musicURL);
+  musicURL = URL.createObjectURL(file);
+  musicEl.src = musicURL;
+  state.settings.music.name = file.name;
+  $('musicName').textContent = `${file.name} · ${fmtTime(musicBuf.duration)}`;
+  show($('musicClear'), true);
+  persist();
+}
+function clearMusic() {
+  musicBuf = null; musicEl.pause(); musicEl.removeAttribute('src');
+  if (musicURL) URL.revokeObjectURL(musicURL); musicURL = null;
+  state.settings.music.name = '';
+  $('musicName').textContent = 'No music'; show($('musicClear'), false); persist();
+}
+let musicGain = 0;
+function syncMusic() {
+  if (!musicBuf || audio.paused) { if (!musicEl.paused) musicEl.pause(); return; }
+  const t = audio.currentTime || 0;
+  if (musicEl.paused) { musicEl.currentTime = t % musicBuf.duration; musicEl.play().catch(() => {}); }
+  const target = state.settings.music.vol * (isSpeaking(speech, t) ? state.settings.music.duck : 1);
+  musicGain += (target - musicGain) * (target < musicGain ? 0.35 : 0.08);
+  musicEl.volume = Math.max(0, Math.min(1, musicGain));
+}
+
 const SPEEDS = [0.5, 1, 1.5, 2];
 let speed = 1;
 function buildSpeed() {
@@ -1114,6 +1491,47 @@ function bind() {
   $('elDone').onclick = () => { selEl = null; updateElbar(); drawPreview(); };
 
   $('btnSplit').onclick = splitAuto;
+  // dictionary
+  $('dictAdd').onclick = () => { dict.push({ from: '', to: '' }); renderDict(); $('dictList').lastElementChild?.querySelector('input')?.focus(); };
+  $('dictApply').onclick = applyDictToProject;
+  // speakers
+  $('wHost').onclick = () => setTurn('host');
+  $('wGuest').onclick = () => setTurn('guest');
+  $('nameHost').oninput = (e) => { state.settings.names.host = e.target.value; persist(); drawPreview(); };
+  $('nameGuest').oninput = (e) => { state.settings.names.guest = e.target.value; persist(); drawPreview(); };
+  $('nameHost').onchange = $('nameGuest').onchange = () => renderCards();
+  $('optNames').onchange = (e) => { state.settings.showNames = e.target.checked; persist(); drawPreview(); };
+  $('optChapter').onchange = (e) => { state.settings.showChapter = e.target.checked; persist(); drawPreview(); };
+  // intro / closing cards
+  const bk = () => state.settings.bookends;
+  const bkBind = (id, key, fn = (v) => v) => { $(id).addEventListener(id.endsWith('Sec') || $(id).type === 'checkbox' ? 'change' : 'input', (e) => { bk()[key] = fn($(id).type === 'checkbox' ? e.target.checked : e.target.value); persist(); }); };
+  bkBind('bkIntro', 'introOn'); bkBind('bkIntroSec', 'introSec', Number); bkBind('bkKicker', 'kicker'); bkBind('bkHead', 'headline'); bkBind('bkSub', 'sub');
+  bkBind('bkOutro', 'outroOn'); bkBind('bkOutroSec', 'outroSec', Number); bkBind('bkOHead', 'outroHeadline'); bkBind('bkOSub', 'outroSub');
+  $('bkPrevIntro').onclick = () => startBookendPreview('intro');
+  $('bkPrevOutro').onclick = () => startBookendPreview('outro');
+  // music
+  $('musicFile').onchange = (e) => { const f = e.target.files[0]; if (f) setMusic(f); e.target.value = ''; };
+  $('musicClear').onclick = clearMusic;
+  $('musicVol').oninput = (e) => { state.settings.music.vol = +e.target.value / 100; $('musicVolOut').textContent = `${e.target.value}%`; persist(); };
+  $('musicDuck').oninput = (e) => { state.settings.music.duck = +e.target.value / 100; $('musicDuckOut').textContent = `${e.target.value}%`; persist(); };
+  // chapters & highlights
+  $('chapAdd').onclick = addChapter;
+  $('chapCopy').onclick = copyYouTube;
+  $('hlFind').onclick = () => { highlights = findHighlights(state.cards, +$('clipLen').value, 6); renderHighlights(); };
+  // carousel
+  SERIES.forEach((n) => { const o = document.createElement('option'); o.value = n; o.textContent = n; $('cSeries').appendChild(o); });
+  $('cSeries').onchange = (e) => { state.series = e.target.value; persist(); if (previewMode?.kind === 'slide') drawPreview(); };
+  document.querySelectorAll('[data-add]').forEach((b) => b.onclick = () => addSlide(b.dataset.add));
+  $('wSlide').onclick = () => {
+    if (!sel) return;
+    addSlide('quote', sentenceAt(sel.c, sel.w), state.cards[sel.c]._spk === 'guest' ? state.settings.names.guest : state.settings.names.host);
+    setTab('carousel');
+  };
+  $('cExport').onclick = exportSlides;
+  $('cPrevExit').onclick = exitPreviewMode;
+  // export extras
+  $('exSubs').onchange = (e) => { state.settings.exportSubs = e.target.checked; persist(); };
+  $('capFull').onclick = () => copyPrompt('a full mini-episode or founder conversation', state.title, 0, totalDur(), $('capOut'), $('capHint'));
   $('insTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
   $('btnExportTop').onclick = () => setTab('export');
   $('btnOpen2').onclick = () => $('openFile').click();
@@ -1160,7 +1578,12 @@ function bind() {
   });
   window.addEventListener('resize', () => { if (!$('workspace').hidden) drawPreview(); });
 }
-function notice(msg) { const n = $('resume'); n.textContent = msg; show(n, true); }
+let noticeTimer = null;
+function notice(msg, ms = 5000) {
+  const n = $('resume'); n.textContent = msg; show(n, true);
+  clearTimeout(noticeTimer);
+  if (ms) noticeTimer = setTimeout(() => { if (n.textContent === msg) show(n, false); }, ms);
+}
 
 function offerResume() {
   let data = null;
@@ -1179,6 +1602,8 @@ function offerResume() {
 // boot
 bind();
 buildTabs();
+buildChapterPresets();
+renderDict();
 buildSpeed();
 applySettingsUI();
 loadFonts().then(() => drawPreview());

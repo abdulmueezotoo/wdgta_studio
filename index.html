@@ -83,6 +83,18 @@
         <input id="replText" type="text" placeholder="Replace with" aria-label="Replace with">
         <button class="btn small" id="btnReplace" type="button">Replace all</button>
       </div>
+      <div class="find-sub">
+        <label class="check small"><input type="checkbox" id="replRemember" checked> Remember this fix</label>
+        <details class="dict" id="dictBox">
+          <summary>Dictionary <span class="mono" id="dictCount"></span></summary>
+          <p class="hint">Fixes applied automatically to every new transcription. Saved in this browser for all projects.</p>
+          <ol class="dict-list" id="dictList"></ol>
+          <div class="btn-row">
+            <button class="btn small ghost" id="dictAdd" type="button">Add a fix</button>
+            <button class="btn small" id="dictApply" type="button">Apply to this project</button>
+          </div>
+        </details>
+      </div>
       <div class="wordbar" id="wordbar" hidden>
         <input id="wordText" type="text" aria-label="Edit word" autocomplete="off">
         <button class="btn small primary" id="wApply" type="button">Apply</button>
@@ -91,6 +103,11 @@
         <button class="btn small" id="wJoin" type="button">Join previous</button>
         <button class="btn small danger" id="wDel" type="button">Delete</button>
         <span class="wordbar-time mono" id="wTime"></span>
+        <div class="wordbar-row">
+          <button class="btn small ghost" id="wHost" type="button" title="The host speaks from this screen on">Host from here</button>
+          <button class="btn small ghost" id="wGuest" type="button" title="The guest speaks from this screen on (right-aligned)">Guest from here</button>
+          <button class="btn small ghost" id="wSlide" type="button" title="Add this sentence to the carousel as a quote">Add to carousel</button>
+        </div>
       </div>
       <ol class="cards" id="cards"></ol>
       <p class="stats mono" id="stats"></p>
@@ -125,6 +142,7 @@
         <button type="button" role="tab" data-tab="design" aria-selected="true">Design</button>
         <button type="button" role="tab" data-tab="marker" aria-selected="false">Marker</button>
         <button type="button" role="tab" data-tab="clips" aria-selected="false">Clips</button>
+        <button type="button" role="tab" data-tab="carousel" aria-selected="false">Carousel</button>
         <button type="button" role="tab" data-tab="export" aria-selected="false">Export</button>
       </div>
 
@@ -155,6 +173,7 @@
             <li><button class="layer-name" type="button" data-el="title">Title</button><label class="eye"><input type="checkbox" id="optTitle" checked><span class="sr">Show title</span></label></li>
             <li><button class="layer-name" type="button" data-el="handle">@wedeygothrougham</button><label class="eye"><input type="checkbox" id="optHandle" checked><span class="sr">Show handle</span></label></li>
             <li><button class="layer-name" type="button" data-el="progress">Progress line</button><label class="eye"><input type="checkbox" id="optProgress" checked><span class="sr">Show progress line</span></label></li>
+            <li><button class="layer-name" type="button" data-el="chapter">Chapter label</button><label class="eye"><input type="checkbox" id="optChapter"><span class="sr">Show chapter label</span></label></li>
           </ul>
         </div>
 
@@ -177,6 +196,47 @@
           </div>
         </div>
         <button class="btn small ghost" id="btnLayoutReset" type="button">Reset all positions for this size</button>
+
+        <details class="group fold" open>
+          <summary>Speakers</summary>
+          <label class="row-field">Host <input type="text" id="nameHost" placeholder="Abdul Mueez Otoo"></label>
+          <label class="row-field">Guest <input type="text" id="nameGuest" placeholder="Guest name"></label>
+          <label class="check"><input type="checkbox" id="optNames"> Show names on video</label>
+          <p class="hint">In the transcript, click a word and press "Guest from here" where the guest starts talking, and "Host from here" where you take over again. Guest words are right-aligned, yours left-aligned.</p>
+        </details>
+
+        <details class="group fold">
+          <summary>Intro &amp; closing cards</summary>
+          <label class="check"><input type="checkbox" id="bkIntro"> Intro card</label>
+          <div class="bk-fields">
+            <label class="row-field">Length <select id="bkIntroSec"><option value="2">2 s</option><option value="3" selected>3 s</option><option value="4">4 s</option><option value="5">5 s</option></select></label>
+            <input type="text" id="bkKicker" placeholder="Label, e.g. Mini-episode" aria-label="Intro label">
+            <input type="text" id="bkHead" placeholder="Headline (empty = clip or project title). *word* = yellow" aria-label="Intro headline">
+            <input type="text" id="bkSub" placeholder="Line under it, e.g. with Prince Mensah · Prifrimps Foods" aria-label="Intro line under the headline">
+            <button class="btn small ghost" id="bkPrevIntro" type="button">Preview intro</button>
+          </div>
+          <label class="check"><input type="checkbox" id="bkOutro"> Closing card</label>
+          <div class="bk-fields">
+            <label class="row-field">Length <select id="bkOutroSec"><option value="3">3 s</option><option value="4" selected>4 s</option><option value="5">5 s</option><option value="6">6 s</option></select></label>
+            <input type="text" id="bkOHead" placeholder="Full episode on Spotify, Apple Podcasts &amp; YouTube" aria-label="Closing headline">
+            <input type="text" id="bkOSub" placeholder="@wedeygothrougham" aria-label="Closing line under the headline">
+            <button class="btn small ghost" id="bkPrevOutro" type="button">Preview closing card</button>
+          </div>
+          <p class="hint">Added to every exported video. Each clip uses its own on-screen title as the intro headline.</p>
+        </details>
+
+        <details class="group fold">
+          <summary>Music bed</summary>
+          <div class="logo-row">
+            <span class="hint" id="musicName">No music</span>
+            <label class="btn small ghost" for="musicFile">Choose music</label>
+            <input id="musicFile" type="file" accept="audio/*" hidden>
+            <button class="btn small ghost" id="musicClear" type="button" hidden>Remove</button>
+          </div>
+          <label class="num wide"><span>Volume</span><input type="range" id="musicVol" min="0" max="100" value="25"><output class="mono" id="musicVolOut">25%</output></label>
+          <label class="num wide"><span>Under voice</span><input type="range" id="musicDuck" min="0" max="100" value="30"><output class="mono" id="musicDuckOut">30%</output></label>
+          <p class="hint">The music drops to the "under voice" level whenever someone speaks, and fades in and out at the ends. It loops if it is shorter than the video. Use music you have the rights to.</p>
+        </details>
       </div>
 
       <div class="tabpanel" data-panel="marker" hidden>
@@ -196,7 +256,27 @@
       </div>
 
       <div class="tabpanel" data-panel="clips" hidden>
+        <details class="group fold" open>
+          <summary>Chapters</summary>
+          <div class="btn-row">
+            <select id="chapPreset" aria-label="Chapter name"></select>
+            <button class="btn small" id="chapAdd" type="button">Add at playhead</button>
+          </div>
+          <ol class="chap-list" id="chapList"></ol>
+          <div class="btn-row">
+            <button class="btn small ghost" id="chapCopy" type="button">Copy YouTube chapters</button>
+          </div>
+          <textarea id="chapOut" class="out" rows="4" readonly hidden aria-label="YouTube chapters"></textarea>
+          <p class="hint" id="chapWarn"></p>
+        </details>
+        <details class="group fold" open>
+          <summary>Highlights</summary>
+          <p class="hint">Finds strong moments: questions, lessons, mistakes, decisions, numbers. Uses the clip length below.</p>
+          <button class="btn small" id="hlFind" type="button">Find highlights</button>
+          <ol class="hl-list" id="hlList"></ol>
+        </details>
         <div class="group">
+          <span class="label">Clips</span>
           <label class="row-field">Split into parts of about
             <select id="clipLen"><option value="30">30 s</option><option value="45">45 s</option><option value="60" selected>60 s</option><option value="90">90 s</option></select>
           </label>
@@ -207,6 +287,27 @@
           <p class="hint">Drag a clip's edges on the timeline to trim it.</p>
         </div>
         <ol class="clip-list" id="clipList"></ol>
+      </div>
+
+      <div class="tabpanel" data-panel="carousel" hidden>
+        <div class="group">
+          <label class="row-field">Series
+            <select id="cSeries"></select>
+          </label>
+          <p class="hint">4:5 slides (1080×1350) in the project's background colour. Wrap words in *stars* to make them yellow. Click a slide to preview it.</p>
+          <div class="btn-row">
+            <button class="btn small ghost" type="button" data-add="cover">+ Cover</button>
+            <button class="btn small ghost" type="button" data-add="quote">+ Quote</button>
+            <button class="btn small ghost" type="button" data-add="point">+ Point</button>
+            <button class="btn small ghost" type="button" data-add="end">+ Closing</button>
+          </div>
+        </div>
+        <ol class="slide-list" id="slideList"></ol>
+        <div class="btn-row">
+          <button class="btn primary" id="cExport" type="button">Save slides as images</button>
+          <button class="btn small ghost" id="cPrevExit" type="button" hidden>Back to video</button>
+        </div>
+        <p class="hint" id="cHint"></p>
       </div>
 
       <div class="tabpanel" data-panel="export" hidden>
@@ -224,6 +325,7 @@
           <label class="radio"><input type="radio" name="dest" value="download" id="destDownload"> <span>Downloads</span></label>
           <p class="hint" id="destHint">With Google Drive for desktop installed, pick a folder inside "Google Drive" and the videos upload automatically.</p>
         </div>
+        <label class="check"><input type="checkbox" id="exSubs" checked> Also save subtitles (.srt and .vtt)</label>
         <div class="btn-row">
           <button class="btn primary" id="btnExport" type="button">Export videos</button>
           <button class="btn ghost" id="btnCancel" type="button" hidden>Cancel</button>
@@ -233,6 +335,13 @@
         <p class="hint" id="exportHint"></p>
         <ul class="downloads" id="downloads"></ul>
         <p class="error" id="exportError" role="alert" hidden></p>
+        <details class="group fold">
+          <summary>Captions &amp; titles</summary>
+          <p class="hint">Copies the transcript with WDGTA voice instructions. Paste it into Claude to get hooks, captions, a LinkedIn post, a YouTube title and hashtags.</p>
+          <button class="btn small" id="capFull" type="button">Copy prompt for the full recording</button>
+          <textarea id="capOut" class="out" rows="5" readonly hidden aria-label="Caption prompt"></textarea>
+          <p class="hint" id="capHint"></p>
+        </details>
       </div>
     </aside>
 
