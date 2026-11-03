@@ -327,3 +327,8 @@ body.is-resizing.col { cursor: col-resize; } body.is-resizing.row { cursor: row-
   .suite, .suite.no-tr, .suite.no-ins, .suite.no-tr.no-ins, .suite.no-tl { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: "view" "tl" "ins" "tr"; }
   .split { display: none; }
 }
+
+.badge-row { display: flex; gap: 6px; }
+.badge-row select { flex: 1 1 auto; }
+.badge-num { width: 70px; flex: 0 0 70px; text-align: center; font-family: var(--mono); }
+#badgeCustom { flex: 1 1 auto; }

@@ -1,6 +1,6 @@
 // WDGTA Studio — content features that don't draw video frames:
 // dictionary, subtitles, chapters, highlight finder, caption prompts, speakers, music ducking, carousel slides.
-import { THEMES, cardStart, cardEnd } from './render.js';
+import { THEMES, cardStart, cardEnd, drawBadge } from './render.js';
 
 const clean = (s) => String(s).toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
 
@@ -298,6 +298,7 @@ export function drawSlide(ctx, slide, index, total, deck) {
     const lw = 300, lh = lw * logo.naturalHeight / logo.naturalWidth;
     ctx.drawImage(logo, M, M - 10, lw, lh);
   }
+  if (deck.badge) drawBadge(ctx, deck.badge, W - M, M - 6, 24, theme);
   ctx.textBaseline = 'top';
   mono(24, theme.meta);
   const kicker = up(deck.series || '');

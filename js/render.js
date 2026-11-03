@@ -18,7 +18,7 @@ export const FORMATS = {
   '16x9': { id: '16x9', label: '16:9', name: 'Landscape', use: 'YouTube, Facebook, LinkedIn', w: 1920, h: 1080 },
 };
 
-export const ELEMENTS = { text: 'Words', logo: 'Logo', title: 'Title', handle: 'Handle', progress: 'Progress line', note: 'Marker note', chapter: 'Chapter label' };
+export const ELEMENTS = { text: 'Words', logo: 'Logo', title: 'Title', handle: 'Handle', progress: 'Progress line', note: 'Marker note', chapter: 'Chapter label', badge: 'Capsule badge' };
 
 /**
  * Background themes. Dark backgrounds: white words, yellow key words.
@@ -169,6 +169,7 @@ export function defaultLayout(fmtId) {
     progress: { x: 0.085, y: 0.184, w: 0.83, s: 1 },
     note: { rel: true, x: 0.13, y: 0.7, s: 1 },
     chapter: { x: 0.085, y: 0.205, s: 1 },
+    badge: { x: 0.915, y: 0.079, s: 1 },
   };
   if (l) return {
     text: { x: 0.1, y: 0.5, s: 1 },
@@ -178,6 +179,7 @@ export function defaultLayout(fmtId) {
     progress: { x: 0, y: 0.992, w: 1, s: 1 },
     note: { rel: true, x: 0.13, y: 0.75, s: 1 },
     chapter: { x: 0.06, y: 0.285, s: 1 },
+    badge: { x: 0.94, y: 0.1, s: 1 },
   };
   return {
     text: { x: 0.085, y: 0.52, s: 1 },
@@ -187,6 +189,7 @@ export function defaultLayout(fmtId) {
     progress: { x: 0, y: 0.992, w: 1, s: 1 },
     note: { rel: true, x: 0.13, y: 0.75, s: 1 },
     chapter: { x: 0.085, y: fmtId === '4x5' ? 0.205 : 0.235, s: 1 },
+    badge: { x: 0.915, y: fmtId === '4x5' ? 0.098 : 0.105, s: 1 },
   };
 }
 
@@ -428,6 +431,10 @@ function drawBrand(ctx, fmt, t, style, theme, L, boxes) {
     ctx.drawImage(logo, x, y, lw, lh);
     boxes.logo = [x, y, lw, lh];
   }
+  if (style.badge) {
+    const p = L.badge;
+    boxes.badge = drawBadge(ctx, style.badge, p.x * W, p.y * H, (fmt.id === '16x9' ? H * 0.026 : fmt.id === '9x16' ? W * 0.03 : W * 0.026) * (p.s || 1), theme);
+  }
 
   const setMono = (s) => {
     const px = Math.round(monoSize(fmt) * (s || 1));
@@ -611,6 +618,7 @@ export function drawBookend(ctx, fmt, kind, t, dur, style = {}) {
   ctx.globalAlpha = fadeIn * fadeOut;
 
   const logo = style.logo || (theme.logo === 'black' ? style.logoDark : style.logoLight);
+  if (style.badge) drawBadge(ctx, style.badge, W - M, fmt.id === '16x9' ? H * 0.08 : W * 0.085, unit * 0.022, theme);
   const kicker = (kind === 'intro' ? b.kicker : '') || '';
   const headRaw = kind === 'intro' ? (b.headline || style.title || '') : (b.outroHeadline || 'Full episode on Spotify, Apple Podcasts & YouTube');
   const sub = (kind === 'intro' ? b.sub : b.outroSub) || '';
@@ -679,4 +687,31 @@ export async function loadFonts() {
     document.fonts.load(`900 64px "Arial Black"`),
     document.fonts.load(`700 48px "Kalam"`),
   ]);
+}
+
+/**
+ * The yellow capsule / episode badge from the WDGTA designs: a square-cornered yellow box,
+ * Ink text in IBM Plex Mono semibold with wide tracking. `right` is the box's right edge.
+ * On a yellow background it flips to Ink with yellow text (brand rule: yellow text only on Ink).
+ * Returns its box [x, y, w, h].
+ */
+export function drawBadge(ctx, text, right, top, px, theme) {
+  const label = String(text || '').trim().toUpperCase();
+  if (!label) return null;
+  ctx.save();
+  ctx.font = `600 ${px}px ${MONO_FONT}`;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${(px * 0.12).toFixed(1)}px`;
+  const tw = ctx.measureText(label).width;
+  const w = Math.max(tw + px * 1.6, px * 8), h = px * 1.85;
+  const x = right - w;
+  const onYellow = theme && theme.bg.toUpperCase() === '#FFC710';
+  ctx.fillStyle = onYellow ? '#0E0E0C' : '#FFC710';
+  ctx.fillRect(x, top, w, h);
+  ctx.fillStyle = onYellow ? '#FFC710' : '#0E0E0C';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  // letter-spacing adds trailing space after the last letter; nudge to optically centre
+  ctx.fillText(label, x + w / 2 + px * 0.06, top + h / 2 + px * 0.04);
+  ctx.restore();
+  return [x, top, w, h];
 }

@@ -28,6 +28,7 @@ const state = {
     maxKeys: 1,
     layouts: {},         // per-format element position overrides
     showChapter: false,
+    badge: { show: true, kind: 'Capsule', num: '1', custom: '' },
     names: { host: 'Abdul Mueez Otoo', guest: '' },
     showNames: false,
     bookends: { introOn: false, introSec: 3, kicker: '', headline: '', sub: '', outroOn: false, outroSec: 4, outroHeadline: '', outroSub: '' },
@@ -93,8 +94,14 @@ function styleObj(extra = {}) {
     names: state.settings.names,
     showNames: state.settings.showNames,
     bookends: state.settings.bookends,
+    badge: badgeText(),
     ...extra,
   };
+}
+function badgeText() {
+  const b = state.settings.badge || {};
+  if (b.show === false) return '';
+  return b.kind === 'Custom' ? (b.custom || '') : `${b.kind || 'Capsule'} ${b.num || ''}`.trim();
 }
 function snapshot() {
   undoStack.push(JSON.stringify({ cards: state.cards, clips: state.clips }));
@@ -476,7 +483,7 @@ function toOut(e) {
   return { x: (e.clientX - r.left) / r.width * f.w, y: (e.clientY - r.top) / r.height * f.h };
 }
 function hitTest(p) {
-  const order = ['note', 'chapter', 'logo', 'title', 'handle', 'progress', 'text'];
+  const order = ['note', 'badge', 'chapter', 'logo', 'title', 'handle', 'progress', 'text'];
   for (const k of order) {
     const b = lastBoxes[k]; if (!b) continue;
     const pad = 14;
@@ -761,11 +768,12 @@ function loadState(data) {
   state.chapters = Array.isArray(data.chapters) ? data.chapters : [];
   state.slides = Array.isArray(data.slides) ? data.slides : [];
   state.series = data.series || 'Reality Check';
-  const base = { names: state.settings.names, bookends: state.settings.bookends, music: state.settings.music };
+  const base = { names: state.settings.names, bookends: state.settings.bookends, music: state.settings.music, badge: state.settings.badge };
   state.settings = { ...state.settings, ...(data.settings || {}) };
   state.settings.names = { ...base.names, ...(data.settings?.names || {}) };
   state.settings.bookends = { ...base.bookends, ...(data.settings?.bookends || {}) };
   state.settings.music = { ...base.music, ...(data.settings?.music || {}), name: '' };
+  state.settings.badge = { ...base.badge, ...(data.settings?.badge || {}) };
   state.settings.layouts ||= {};
   state.audioName = data.audioName || '';
   state.duration = data.duration || 0;
@@ -788,6 +796,10 @@ function applySettingsUI() {
   $('optLogo').checked = state.settings.showLogo !== false;
   $('optKeys').value = String(state.settings.maxKeys || 1);
   $('optChapter').checked = !!state.settings.showChapter;
+  const bd = state.settings.badge;
+  $('optBadge').checked = bd.show !== false; $('badgeKind').value = bd.kind || 'Capsule';
+  $('badgeNum').value = bd.num || ''; $('badgeCustom').value = bd.custom || '';
+  show($('badgeNum'), bd.kind !== 'Custom'); show($('badgeCustom'), bd.kind === 'Custom');
   $('optNames').checked = !!state.settings.showNames;
   $('nameHost').value = state.settings.names.host || '';
   $('nameGuest').value = state.settings.names.guest || '';
@@ -1263,7 +1275,7 @@ function renderHighlights() {
 
 // ---------------- carousel ----------------
 function deck() {
-  return { series: state.series === 'Quote' ? '' : state.series, bg: state.settings.bg, logo: logoImg, logoLight, logoDark, upper: state.settings.upper };
+  return { series: state.series === 'Quote' ? '' : state.series, bg: state.settings.bg, logo: logoImg, logoLight, logoDark, upper: state.settings.upper, badge: badgeText() };
 }
 function sentenceAt(ci, wi) {
   const words = allWords();
@@ -1590,6 +1602,16 @@ function bind() {
   $('nameHost').onchange = $('nameGuest').onchange = () => renderCards();
   $('optNames').onchange = (e) => { state.settings.showNames = e.target.checked; persist(); drawPreview(); };
   $('optChapter').onchange = (e) => { state.settings.showChapter = e.target.checked; persist(); drawPreview(); };
+  // capsule / episode badge
+  const bdUpdate = () => { persist(); if (previewMode) drawPreviewMode(); else drawPreview(); };
+  $('optBadge').onchange = (e) => { state.settings.badge.show = e.target.checked; bdUpdate(); };
+  $('badgeKind').onchange = (e) => {
+    state.settings.badge.kind = e.target.value;
+    show($('badgeNum'), e.target.value !== 'Custom'); show($('badgeCustom'), e.target.value === 'Custom');
+    bdUpdate();
+  };
+  $('badgeNum').oninput = (e) => { state.settings.badge.num = e.target.value; bdUpdate(); };
+  $('badgeCustom').oninput = (e) => { state.settings.badge.custom = e.target.value; bdUpdate(); };
   // intro / closing cards
   const bk = () => state.settings.bookends;
   const bkBind = (id, key, fn = (v) => v) => { $(id).addEventListener(id.endsWith('Sec') || $(id).type === 'checkbox' ? 'change' : 'input', (e) => { bk()[key] = fn($(id).type === 'checkbox' ? e.target.checked : e.target.value); persist(); }); };

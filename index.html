@@ -186,7 +186,24 @@
             <li><button class="layer-name" type="button" data-el="handle">@wedeygothrougham</button><label class="eye"><input type="checkbox" id="optHandle" checked><span class="sr">Show handle</span></label></li>
             <li><button class="layer-name" type="button" data-el="progress">Progress line</button><label class="eye"><input type="checkbox" id="optProgress" checked><span class="sr">Show progress line</span></label></li>
             <li><button class="layer-name" type="button" data-el="chapter">Chapter label</button><label class="eye"><input type="checkbox" id="optChapter"><span class="sr">Show chapter label</span></label></li>
+            <li><button class="layer-name" type="button" data-el="badge">Capsule badge</button><label class="eye"><input type="checkbox" id="optBadge" checked><span class="sr">Show capsule badge</span></label></li>
           </ul>
+        </div>
+
+        <div class="group">
+          <span class="label">Capsule / episode badge</span>
+          <div class="badge-row">
+            <select id="badgeKind" aria-label="Badge type">
+              <option value="Capsule">Capsule</option>
+              <option value="Episode">Episode</option>
+              <option value="Ep">Ep</option>
+              <option value="Part">Part</option>
+              <option value="Custom">Custom text</option>
+            </select>
+            <input type="text" id="badgeNum" inputmode="numeric" placeholder="1" aria-label="Number" class="badge-num">
+            <input type="text" id="badgeCustom" placeholder="e.g. BONUS" aria-label="Badge text" hidden>
+          </div>
+          <p class="hint">Shown top-right on videos, intro and closing cards, and carousel slides. Drag it in the preview to move it.</p>
         </div>
 
         <div class="group">
