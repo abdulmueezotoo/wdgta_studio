@@ -24,6 +24,12 @@
       <span class="module is-later" title="Coming later">Reality Radar</span>
     </nav>
     <input id="projTitle" class="proj-title" type="text" placeholder="Untitled project" aria-label="Project title (also shown on the video)" autocomplete="off">
+    <div class="view-toggles" role="group" aria-label="Show or hide panels">
+      <button type="button" class="vt" data-panel-toggle="tr" aria-pressed="true" title="Show or hide the transcript (Alt+1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg><span class="sr">Transcript</span></button>
+      <button type="button" class="vt" data-panel-toggle="tl" aria-pressed="true" title="Show or hide the timeline (Alt+2)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 14h18"/></svg><span class="sr">Timeline</span></button>
+      <button type="button" class="vt" data-panel-toggle="ins" aria-pressed="true" title="Show or hide the inspector (Alt+3)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg><span class="sr">Inspector</span></button>
+      <button type="button" class="vt" id="btnLayoutDefault" title="Reset panel sizes"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></svg><span class="sr">Reset panel sizes</span></button>
+    </div>
     <div class="top-actions">
       <button class="btn ghost" id="btnOpen" type="button">Open</button>
       <button class="btn ghost" id="btnSave" type="button" disabled>Save</button>
@@ -76,6 +82,7 @@
         <div class="head-tools">
           <button class="btn small ghost" id="btnUndo" type="button" disabled>Undo</button>
           <button class="btn small ghost" id="btnRegroup" type="button" title="Rebuild the screens automatically from the words">Regroup</button>
+          <button class="collapse" type="button" data-panel-hide="tr" aria-label="Hide transcript" title="Hide transcript">‹</button>
         </div>
       </div>
       <div class="find">
@@ -113,6 +120,8 @@
       <p class="stats mono" id="stats"></p>
     </section>
 
+    <div class="split split-v" id="splitL" role="separator" aria-orientation="vertical" aria-label="Resize transcript" tabindex="0" title="Drag to resize. Double-click to reset."></div>
+
     <section class="viewer" aria-label="Viewer">
       <div class="fmt-tabs" role="tablist" id="fmtTabs"></div>
       <div class="stage" id="stage">
@@ -137,8 +146,11 @@
       <p class="hint" id="noAudio" hidden>Add the audio file to preview and export: <label class="link" for="audioFile2">choose audio</label><input id="audioFile2" type="file" accept="audio/*,video/*" hidden></p>
     </section>
 
+    <div class="split split-v" id="splitR" role="separator" aria-orientation="vertical" aria-label="Resize inspector" tabindex="0" title="Drag to resize. Double-click to reset."></div>
+
     <aside class="panel inspector" aria-label="Inspector">
       <div class="tabs" role="tablist" id="insTabs">
+        <button class="collapse" type="button" data-panel-hide="ins" aria-label="Hide inspector" title="Hide inspector">›</button>
         <button type="button" role="tab" data-tab="design" aria-selected="true">Design</button>
         <button type="button" role="tab" data-tab="marker" aria-selected="false">Marker</button>
         <button type="button" role="tab" data-tab="clips" aria-selected="false">Clips</button>
@@ -345,7 +357,10 @@
       </div>
     </aside>
 
+    <div class="split split-h" id="splitB" role="separator" aria-orientation="horizontal" aria-label="Resize timeline" tabindex="0" title="Drag to resize. Double-click to reset."></div>
+
     <section class="timeline" aria-label="Timeline">
+      <button class="collapse tl-collapse" type="button" data-panel-hide="tl" aria-label="Hide timeline" title="Hide timeline">⌄</button>
       <div class="tl-labels" aria-hidden="true">
         <span class="tl-l ruler-l"></span>
         <span class="tl-l">Clips</span>

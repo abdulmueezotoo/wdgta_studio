@@ -1382,6 +1382,88 @@ function syncMusic() {
   musicEl.volume = Math.max(0, Math.min(1, musicGain));
 }
 
+// ---------------- resizable / hideable panels ----------------
+const LAYOUT_KEY = 'wdgta-studio:layout';
+const LAYOUT_DEFAULT = { tr: 340, ins: 320, tl: 150, hide: { tr: false, ins: false, tl: false } };
+let ui = (() => {
+  try { const d = JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null'); if (d) return { ...LAYOUT_DEFAULT, ...d, hide: { ...LAYOUT_DEFAULT.hide, ...(d.hide || {}) } }; } catch {}
+  return structuredClone(LAYOUT_DEFAULT);
+})();
+function saveUI() { try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(ui)); } catch {} }
+const suite = $('workspace');
+let layoutRAF = 0;
+function applyLayout(save = true) {
+  suite.style.setProperty('--tr-w', `${ui.tr}px`);
+  suite.style.setProperty('--ins-w', `${ui.ins}px`);
+  suite.style.setProperty('--tl-canvas', `${ui.tl}px`);
+  suite.style.setProperty('--tl-audio', `${ui.tl - 100}px`);
+  TL.h = ui.tl; TL.audio[1] = ui.tl - 100;
+  for (const k of ['tr', 'ins', 'tl']) {
+    suite.classList.toggle(`no-${k}`, !!ui.hide[k]);
+    document.querySelectorAll(`[data-panel-toggle="${k}"]`).forEach((b) => b.setAttribute('aria-pressed', String(!ui.hide[k])));
+  }
+  if (save) saveUI();
+  cancelAnimationFrame(layoutRAF);
+  layoutRAF = requestAnimationFrame(() => { resizeCanvas(); tlStatic = null; drawTimeline(); });
+}
+function togglePanel(k, force) {
+  ui.hide[k] = force ?? !ui.hide[k];
+  applyLayout();
+}
+function clampSizes() {
+  const W = suite.clientWidth || window.innerWidth;
+  const room = W - 300 - 10; // keep the viewer at least ~300px wide
+  ui.tr = Math.round(Math.max(200, Math.min(640, ui.tr)));
+  ui.ins = Math.round(Math.max(260, Math.min(560, ui.ins)));
+  const used = (ui.hide.tr ? 0 : ui.tr) + (ui.hide.ins ? 0 : ui.ins);
+  if (used > room) {
+    const over = used - room;
+    if (!ui.hide.tr) ui.tr = Math.max(200, ui.tr - over);
+  }
+  ui.tl = Math.round(Math.max(120, Math.min(Math.max(160, window.innerHeight * 0.55), ui.tl)));
+}
+function bindSplitter(el, kind) {
+  let st = null;
+  el.addEventListener('pointerdown', (e) => {
+    st = { x: e.clientX, y: e.clientY, tr: ui.tr, ins: ui.ins, tl: ui.tl };
+    el.setPointerCapture(e.pointerId);
+    el.classList.add('is-drag');
+    document.body.classList.add('is-resizing', kind === 'b' ? 'row' : 'col');
+    e.preventDefault();
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (!st) return;
+    if (kind === 'l') ui.tr = st.tr + (e.clientX - st.x);
+    if (kind === 'r') ui.ins = st.ins - (e.clientX - st.x);
+    if (kind === 'b') ui.tl = st.tl - (e.clientY - st.y);
+    clampSizes(); applyLayout(false);
+  });
+  const end = () => {
+    if (!st) return;
+    st = null; el.classList.remove('is-drag');
+    document.body.classList.remove('is-resizing', 'row', 'col');
+    saveUI();
+  };
+  el.addEventListener('pointerup', end);
+  el.addEventListener('pointercancel', end);
+  el.addEventListener('dblclick', () => {
+    if (kind === 'l') ui.tr = LAYOUT_DEFAULT.tr;
+    if (kind === 'r') ui.ins = LAYOUT_DEFAULT.ins;
+    if (kind === 'b') ui.tl = LAYOUT_DEFAULT.tl;
+    clampSizes(); applyLayout();
+  });
+  el.addEventListener('keydown', (e) => {
+    const step = e.shiftKey ? 48 : 16;
+    const d = { ArrowLeft: -step, ArrowRight: step, ArrowUp: -step, ArrowDown: step }[e.key];
+    if (d === undefined) return;
+    e.preventDefault();
+    if (kind === 'l') ui.tr += d;
+    if (kind === 'r') ui.ins -= d;
+    if (kind === 'b') ui.tl -= d;
+    clampSizes(); applyLayout();
+  });
+}
+
 const SPEEDS = [0.5, 1, 1.5, 2];
 let speed = 1;
 function buildSpeed() {
@@ -1491,6 +1573,12 @@ function bind() {
   $('elDone').onclick = () => { selEl = null; updateElbar(); drawPreview(); };
 
   $('btnSplit').onclick = splitAuto;
+  // panels
+  bindSplitter($('splitL'), 'l'); bindSplitter($('splitR'), 'r'); bindSplitter($('splitB'), 'b');
+  document.querySelectorAll('[data-panel-toggle]').forEach((b) => b.onclick = () => togglePanel(b.dataset.panelToggle));
+  document.querySelectorAll('[data-panel-hide]').forEach((b) => b.onclick = () => togglePanel(b.dataset.panelHide, true));
+  $('btnLayoutDefault').onclick = () => { ui = structuredClone(LAYOUT_DEFAULT); clampSizes(); applyLayout(); };
+  window.addEventListener('resize', () => { clampSizes(); applyLayout(false); });
   // dictionary
   $('dictAdd').onclick = () => { dict.push({ from: '', to: '' }); renderDict(); $('dictList').lastElementChild?.querySelector('input')?.focus(); };
   $('dictApply').onclick = applyDictToProject;
@@ -1560,6 +1648,7 @@ function bind() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); }
     if (e.code === 'Space' && !typing && !$('workspace').hidden) { e.preventDefault(); togglePlay(); }
+    if (e.altKey && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) { e.preventDefault(); togglePanel({ Digit1: 'tr', Digit2: 'tl', Digit3: 'ins' }[e.code]); return; }
     if (!typing && !$('workspace').hidden && (e.key === '=' || e.key === '+' || e.key === '-')) {
       e.preventDefault(); setZoom(tlZoomLevel * (e.key === '-' ? 0.8 : 1.25));
     }
@@ -1602,6 +1691,7 @@ function offerResume() {
 // boot
 bind();
 buildTabs();
+clampSizes(); applyLayout(false);
 buildChapterPresets();
 renderDict();
 buildSpeed();
