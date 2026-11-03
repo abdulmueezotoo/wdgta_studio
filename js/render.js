@@ -18,10 +18,25 @@ export const FORMATS = {
   '16x9': { id: '16x9', label: '16:9', name: 'Landscape', use: 'YouTube, Facebook, LinkedIn', w: 1920, h: 1080 },
 };
 
-export const ELEMENTS = { text: 'Words', logo: 'Logo', title: 'Title', handle: 'Handle', progress: 'Progress line' };
+export const ELEMENTS = { text: 'Words', logo: 'Logo', title: 'Title', handle: 'Handle', progress: 'Progress line', note: 'Marker note' };
+
+/**
+ * Background themes. Dark backgrounds: white words, yellow key words.
+ * Light backgrounds follow the brand rules: Ink words; key words become Ink-on-yellow blocks
+ * (or yellow-on-Ink blocks when the background itself is yellow).
+ */
+export const THEMES = {
+  ink:      { name: 'Ink',      bg: '#0E0E0C', text: '#FFFFFF', dim: '#34322E', from: '#A8A398', key: '#FFC710', keyStyle: 'color', meta: '#A8A398', track: '#26251F', fill: '#A8A398', marker: '#E8512A', logo: 'white' },
+  black:    { name: 'Black',    bg: '#000000', text: '#FFFFFF', dim: '#2B2A27', from: '#A8A398', key: '#FFC710', keyStyle: 'color', meta: '#A8A398', track: '#1C1B19', fill: '#A8A398', marker: '#E8512A', logo: 'white' },
+  graphite: { name: 'Graphite', bg: '#5E5B55', text: '#FFFFFF', dim: '#7A766F', from: '#D9D5CC', key: '#FFC710', keyStyle: 'color', meta: '#E7ECF2', track: '#4E4B46', fill: '#E7ECF2', marker: '#FF8A63', logo: 'white' },
+  mist:     { name: 'Mist',     bg: '#E7ECF2', text: '#0E0E0C', dim: '#C2C7CD', from: '#5E5B55', key: '#0E0E0C', keyBg: '#FFC710', keyStyle: 'block', meta: '#5E5B55', track: '#CDD3DA', fill: '#0E0E0C', marker: '#E8512A', logo: 'black' },
+  stone:    { name: 'Stone',    bg: '#A8A398', text: '#0E0E0C', dim: '#8E897F', from: '#3A3833', key: '#0E0E0C', keyBg: '#FFC710', keyStyle: 'block', meta: '#22211D', track: '#959085', fill: '#0E0E0C', marker: '#B8300C', logo: 'black' },
+  yellow:   { name: 'Yellow',   bg: '#FFC710', text: '#0E0E0C', dim: '#E0AA00', from: '#5E4A00', key: '#FFC710', keyBg: '#0E0E0C', keyStyle: 'block', meta: '#0E0E0C', track: '#E5B000', fill: '#0E0E0C', marker: '#0E0E0C', logo: 'black' },
+};
 
 const HEAD_FONT = '"Arial Black", "Archivo Black", "Helvetica Neue", Arial, sans-serif';
 const MONO_FONT = '"IBM Plex Mono", ui-monospace, Menlo, monospace';
+const HAND_FONT = '"Kalam", "Comic Sans MS", "Segoe Print", cursive';
 
 const STOP = new Set(('a an and are as at be been but by can could did do does doing for from had has have he her him his how i ' +
   'if in into is it its just like me my no not now of on or our out so some than that the their them then there these they ' +
@@ -152,6 +167,7 @@ export function defaultLayout(fmtId) {
     title: { x: 0.085, y: 0.145, s: 1 },
     handle: { x: 0.085, y: 0.168, s: 1 },
     progress: { x: 0.085, y: 0.184, w: 0.83, s: 1 },
+    note: { rel: true, x: 0.13, y: 0.7, s: 1 },
   };
   if (l) return {
     text: { x: 0.1, y: 0.5, s: 1 },
@@ -159,6 +175,7 @@ export function defaultLayout(fmtId) {
     title: { x: 0.06, y: 0.235, s: 1 },
     handle: { x: 0.06, y: 0.9, s: 1 },
     progress: { x: 0, y: 0.992, w: 1, s: 1 },
+    note: { rel: true, x: 0.13, y: 0.75, s: 1 },
   };
   return {
     text: { x: 0.085, y: 0.52, s: 1 },
@@ -166,6 +183,7 @@ export function defaultLayout(fmtId) {
     title: { x: 0.085, y: fmtId === '4x5' ? 0.175 : 0.2, s: 1 },
     handle: { x: 0.085, y: 0.91, s: 1 },
     progress: { x: 0, y: 0.992, w: 1, s: 1 },
+    note: { rel: true, x: 0.13, y: 0.75, s: 1 },
   };
 }
 
@@ -270,21 +288,134 @@ function mix(a, b, t) {
   return `rgb(${r},${gg},${bb})`;
 }
 const ease = x => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
-const UPCOMING = '#34322E';
+
+// small deterministic random generator so hand-drawn marks don't jitter between frames
+function rng(seedStr) {
+  let h = 2166136261;
+  for (let i = 0; i < seedStr.length; i++) { h ^= seedStr.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 10000) / 10000; };
+}
+
+/** Draw the first fraction p of a polyline. */
+function strokePartial(ctx, pts, p) {
+  if (p <= 0 || pts.length < 2) return;
+  const n = Math.max(2, Math.floor(pts.length * Math.min(1, p)));
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < n; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.stroke();
+}
+
+function markPath(kind, x, top, w, h, size, seed) {
+  const r = rng(seed);
+  const pts = [];
+  if (kind === 'circle') {
+    const cx = x + w / 2, cy = top + h / 2;
+    const rx = w / 2 + size * 0.28, ry = h / 2 + size * 0.22;
+    const a0 = -2.5 + r() * 0.4, span = Math.PI * 2 * (1.06 + r() * 0.06);
+    const N = 72;
+    for (let i = 0; i <= N; i++) {
+      const a = a0 + span * i / N;
+      const grow = 1 + (i / N) * 0.07 + (r() - 0.5) * 0.015;
+      pts.push([cx + Math.cos(a) * rx * grow, cy + Math.sin(a) * ry * grow]);
+    }
+  } else if (kind === 'underline') {
+    const y = top + h + size * 0.14, N = 40, tilt = (r() - 0.5) * size * 0.12;
+    for (let i = 0; i <= N; i++) {
+      const f = i / N;
+      pts.push([x - size * 0.08 + (w + size * 0.2) * f, y + Math.sin(f * Math.PI * 2.2 + r()) * size * 0.03 + tilt * f]);
+    }
+  } else if (kind === 'strike') {
+    const y = top + h * 0.52, N = 30, tilt = -size * 0.1 - r() * size * 0.08;
+    for (let i = 0; i <= N; i++) {
+      const f = i / N;
+      pts.push([x - size * 0.1 + (w + size * 0.2) * f, y + tilt * (f - 0.5) + (r() - 0.5) * size * 0.015]);
+    }
+  }
+  return pts;
+}
 
 function monoSize(fmt) { return Math.round(Math.max(18, (fmt.id === '16x9' ? fmt.h : fmt.w) * 0.024)); }
 
-function drawBrand(ctx, fmt, t, style, L, boxes) {
+function wrapText(ctx, text, maxW) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const t = cur ? cur + ' ' + w : w;
+    if (cur && ctx.measureText(t).width > maxW) { lines.push(cur); cur = w; } else cur = t;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+function drawNote(ctx, fmt, theme, card, t, L, textBox, boxes, rangeStart) {
+  const note = (card.note || '').trim();
+  if (!note) return;
+  const { w: W, h: H } = fmt;
+  const p = L.note;
+  const size = monoSize(fmt) * 2.1 * (p.s || 1);
+  ctx.save();
+  ctx.font = `700 ${size}px ${HAND_FONT}`;
+  const maxW = fmt.id === '16x9' ? W * 0.4 : W * 0.66;
+  const lines = wrapText(ctx, note, maxW);
+  const lineH = size * 1.05;
+  const width = Math.max(...lines.map(l => ctx.measureText(l).width));
+  const height = lines.length * lineH;
+  let x, y;
+  if (p.rel !== false && textBox) {
+    x = textBox[0] + W * 0.06;
+    y = textBox[1] + textBox[3] + size * 0.9;
+  } else { x = p.x * W; y = p.y * H; }
+  x = Math.min(x, W - width - W * 0.03);
+  y = Math.min(y, H - height - H * 0.03);
+
+  const start = Math.max(cardStart(card), rangeStart) + 0.25;
+  const k = ease((t - start) / 0.7);
+  if (k <= 0) { ctx.restore(); boxes.note = [x, y, width, height]; return; }
+
+  ctx.strokeStyle = theme.marker; ctx.fillStyle = theme.marker;
+  ctx.lineWidth = Math.max(3, size * 0.09); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  // hand-drawn arrow from the note up towards the words
+  const ax = x - size * 0.35, ay = y + size * 0.45;
+  const bx = x - size * 0.55, by = y - size * 0.95;
+  const arrow = [];
+  for (let i = 0; i <= 24; i++) {
+    const f = i / 24;
+    const cx = x - size * 1.15, cy = y - size * 0.05;
+    arrow.push([(1 - f) * (1 - f) * ax + 2 * (1 - f) * f * cx + f * f * bx, (1 - f) * (1 - f) * ay + 2 * (1 - f) * f * cy + f * f * by]);
+  }
+  const ka = Math.min(1, k / 0.45);
+  strokePartial(ctx, arrow, ka);
+  if (ka >= 1) {
+    const hl = size * 0.32;
+    ctx.beginPath();
+    ctx.moveTo(bx - hl * 0.7, by + hl * 0.55); ctx.lineTo(bx, by); ctx.lineTo(bx + hl * 0.75, by + hl * 0.35);
+    ctx.stroke();
+  }
+  // handwriting "writes on" from left to right
+  const kt = Math.max(0, (k - 0.25) / 0.75);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(x - 4, y - size, (width + 8) * kt, height + size * 1.5); ctx.clip();
+  ctx.translate(x, y); ctx.rotate(-0.035);
+  ctx.textBaseline = 'top';
+  lines.forEach((l, i) => ctx.fillText(l, 0, i * lineH));
+  ctx.restore();
+  ctx.restore();
+  boxes.note = [x, y, width, height];
+}
+
+function drawBrand(ctx, fmt, t, style, theme, L, boxes) {
   const { w: W, h: H } = fmt;
   ctx.textBaseline = 'top';
 
-  // logo
-  if (style.logo && style.logo.complete && style.logo.naturalWidth && style.showLogo !== false) {
+  const logo = style.logo || (theme.logo === 'black' ? style.logoDark : style.logoLight);
+  if (logo && logo.complete && logo.naturalWidth && style.showLogo !== false) {
     const p = L.logo;
     const lw = (fmt.id === '16x9' ? W * 0.22 : fmt.id === '9x16' ? W * 0.5 : W * 0.42) * (p.s || 1);
-    const lh = lw * style.logo.naturalHeight / style.logo.naturalWidth;
+    const lh = lw * logo.naturalHeight / logo.naturalWidth;
     const x = p.x * W, y = p.y * H;
-    ctx.drawImage(style.logo, x, y, lw, lh);
+    ctx.drawImage(logo, x, y, lw, lh);
     boxes.logo = [x, y, lw, lh];
   }
 
@@ -294,18 +425,17 @@ function drawBrand(ctx, fmt, t, style, L, boxes) {
     if ('letterSpacing' in ctx) ctx.letterSpacing = `${Math.round(px * 0.08)}px`;
     return px;
   };
-
   const title = (style.title || '').trim().toUpperCase();
   if (title) {
     const p = L.title; const px = setMono(p.s);
-    ctx.fillStyle = BRAND.stone;
+    ctx.fillStyle = theme.meta;
     const x = p.x * W, y = p.y * H;
     ctx.fillText(title, x, y);
     boxes.title = [x, y, ctx.measureText(title).width, px * 1.2];
   }
   if (style.handle !== false) {
     const p = L.handle; const px = setMono(p.s);
-    ctx.fillStyle = BRAND.stone;
+    ctx.fillStyle = theme.meta;
     const x = p.x * W, y = p.y * H, txt = '@WEDEYGOTHROUGHAM';
     ctx.fillText(txt, x, y);
     boxes.handle = [x, y, ctx.measureText(txt).width, px * 1.2];
@@ -318,9 +448,9 @@ function drawBrand(ctx, fmt, t, style, L, boxes) {
     const p = L.progress;
     const bh = Math.max(4, H * 0.004) * (p.s || 1);
     const bx = p.x * W, by = Math.min(H - bh, p.y * H), bw = Math.min(W - bx, p.w * W);
-    ctx.fillStyle = '#26251F';
+    ctx.fillStyle = theme.track;
     ctx.fillRect(bx, by, bw, bh);
-    ctx.fillStyle = BRAND.stone;
+    ctx.fillStyle = theme.fill;
     ctx.fillRect(bx, by, bw * Math.min(1, Math.max(0, (t - r.start) / dur)), bh);
     boxes.progress = [bx, by - 8, bw, bh + 16];
   }
@@ -329,14 +459,16 @@ function drawBrand(ctx, fmt, t, style, L, boxes) {
 /**
  * Paint one frame.
  * ctx: 2D context already scaled so that 1 unit = 1 output pixel of fmt.
- * style: { upper, handle, progress, title, logo(Image), showLogo, layout(overrides), range:{start,end} }
- * Returns hit boxes {text, logo, title, handle, progress} in output pixels (used for drag-to-move).
+ * style: { bg, upper, handle, progress, title, logo (custom Image), logoLight, logoDark, showLogo,
+ *          layout (overrides), range:{start,end} }
+ * Returns hit boxes {text, logo, title, handle, progress, note} in output pixels (used for drag-to-move).
  */
 export function drawFrame(ctx, cards, t, fmt, style = {}) {
   const { w: W, h: H } = fmt;
+  const theme = THEMES[style.bg] || THEMES.ink;
   const L = resolveLayout(fmt.id, style.layout);
   const boxes = {};
-  ctx.fillStyle = BRAND.ink;
+  ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, W, H);
 
   const rangeStart = style.range ? style.range.start : 0;
@@ -356,28 +488,49 @@ export function drawFrame(ctx, cards, t, fmt, style = {}) {
       ctx.globalAlpha = alpha;
       ctx.textBaseline = 'alphabetic';
       const keys = card.keys || [];
+      const marks = [];
       for (const ln of lay.lines) {
         ctx.font = `900 ${ln.size}px ${HEAD_FONT}`;
         for (const it of ln.items) {
           const wd = card.words[it.i];
           const k = ease((t - Math.max(wd.s, rangeStart)) / 0.1);
           const spoken = t >= wd.s;
-          const target = keys.includes(it.i) ? BRAND.yellow : BRAND.white;
-          ctx.fillStyle = spoken ? mix(BRAND.stone, target, k) : UPCOMING;
+          const isKey = keys.includes(it.i);
           const pop = spoken ? (1 - k) * ln.size * 0.06 : 0;
-          ctx.fillText(it.text, lay.x + it.x, lay.y + ln.baseline + rise + pop);
+          const bx = lay.x + it.x, by = lay.y + ln.baseline + rise + pop;
+          if (isKey && theme.keyStyle === 'block' && spoken) {
+            const padX = ln.size * 0.09;
+            ctx.fillStyle = theme.keyBg;
+            ctx.fillRect(bx - padX, by - ln.size * 0.8, (it.w + padX * 2) * k, ln.size * 0.94);
+            ctx.fillStyle = mix(theme.text, theme.key, k);
+          } else {
+            const target = isKey ? theme.key : theme.text;
+            ctx.fillStyle = spoken ? mix(theme.from, target, k) : theme.dim;
+          }
+          ctx.fillText(it.text, bx, by);
+          if (wd.mark && spoken) marks.push({ kind: wd.mark, x: bx, top: by - ln.size * 0.74, w: it.w, h: ln.size * 0.74, size: ln.size, s: Math.max(wd.s, rangeStart), seed: wd.w + it.i + ci });
         }
+      }
+      // marker annotations draw themselves on, just after the word is spoken
+      ctx.strokeStyle = theme.marker;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      for (const m of marks) {
+        ctx.lineWidth = Math.max(4, m.size * 0.075);
+        strokePartial(ctx, markPath(m.kind, m.x, m.top, m.w, m.h, m.size, m.seed), ease((t - m.s - 0.05) / 0.45));
       }
       ctx.restore();
       boxes.text = [lay.x, lay.y, Math.max(lay.maxWidth, W * 0.1), lay.height];
       drewText = true;
+      ctx.save(); ctx.globalAlpha = alpha;
+      drawNote(ctx, fmt, theme, card, t, L, boxes.text, boxes, rangeStart);
+      ctx.restore();
     }
   }
   if (!drewText) {
     const g = textGeometry(fmt, L.text);
     boxes.text = [g.left, g.centerY - g.base * 1.5, g.maxW * 0.6, g.base * 3];
   }
-  drawBrand(ctx, fmt, t, style, L, boxes);
+  drawBrand(ctx, fmt, t, style, theme, L, boxes);
   return boxes;
 }
 
@@ -388,5 +541,6 @@ export async function loadFonts() {
     document.fonts.load(`900 64px "Archivo Black"`),
     document.fonts.load(`500 24px "IBM Plex Mono"`),
     document.fonts.load(`900 64px "Arial Black"`),
+    document.fonts.load(`700 48px "Kalam"`),
   ]);
 }

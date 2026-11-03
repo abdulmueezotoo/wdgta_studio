@@ -1,6 +1,6 @@
 // WDGTA Studio — app controller (upload → transcribe → edit → preview → clips → export).
 import {
-  FORMATS, ELEMENTS, buildCards, autoKeys, normalizeCard, drawFrame, cardAt, cardStart, cardEnd,
+  FORMATS, ELEMENTS, THEMES, buildCards, autoKeys, normalizeCard, drawFrame, cardAt, cardStart, cardEnd,
   loadFonts, resolveLayout, defaultLayout, suggestClips,
 } from './render.js';
 import { renderMp4, renderStill, exportSupported } from './exporter.js';
@@ -8,12 +8,14 @@ import { renderMp4, renderStill, exportSupported } from './exporter.js';
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'wdgta-studio:last-project';
 const OFFICIAL_LOGO = 'assets/wdgta-logo-white.png';
+const OFFICIAL_LOGO_DARK = 'assets/wdgta-logo-black.png';
 
 const state = {
   title: '',
   cards: [],            // [{words:[{w,s,e,edited?}], keys:[i]}]
   clips: [],            // [{id, name, start, end, title}]
   settings: {
+    bg: 'ink',
     upper: true, handle: true, progress: true, showTitle: true, showLogo: true,
     logo: null,          // custom logo data URL; null = official logo
     maxKeys: 1,
@@ -30,7 +32,10 @@ let audioFile = null, audioURL = null, audioBuf48 = null;
 let sel = null;            // selected word {c, w}
 let selEl = null;          // selected design element name
 let undoStack = [];
-let logoImg = null;
+let logoImg = null;  // custom logo (if any)
+const logoLight = new Image(), logoDark = new Image();
+logoLight.onload = logoDark.onload = () => drawPreview();
+logoLight.src = OFFICIAL_LOGO; logoDark.src = OFFICIAL_LOGO_DARK;
 let playClip = null;       // clip being played (stop at its end)
 const audio = new Audio();
 audio.preload = 'auto';
@@ -54,7 +59,9 @@ function styleObj(extra = {}) {
     progress: state.settings.progress,
     title: state.settings.showTitle ? state.title : '',
     showLogo: state.settings.showLogo,
+    bg: state.settings.bg,
     logo: logoImg,
+    logoLight, logoDark,
     layout: state.settings.layouts,
     range: { start: 0, end: totalDur() },
     ...extra,
@@ -182,10 +189,12 @@ function renderCards() {
       b.type = 'button'; b.className = 'w'; b.dataset.c = ci; b.dataset.w = wi;
       if (c.keys.includes(wi)) b.classList.add('is-key');
       if (wd.edited) b.classList.add('is-edited');
+      if (wd.mark) b.classList.add('has-mark');
       if (sel && sel.c === ci && sel.w === wi) b.classList.add('is-sel');
       b.textContent = wd.w;
       wrap.appendChild(b);
     });
+    if (c.note) { const n = document.createElement('p'); n.className = 'card-note'; n.textContent = '↳ ' + c.note; wrap.appendChild(n); }
     li.appendChild(wrap);
     frag.appendChild(li);
   });
@@ -205,6 +214,8 @@ function updateWordbar() {
   $('wSplit').disabled = sel.w === 0;
   $('wJoin').disabled = sel.c === 0;
   $('wTime').textContent = `${fmtTime(wd.s, true)} – ${fmtTime(wd.e, true)}`;
+  $('wMark').value = wd.mark || '';
+  if (document.activeElement !== $('wNote')) $('wNote').value = c.note || '';
 }
 function selectWord(ci, wi, seek = true) {
   sel = { c: ci, w: wi };
@@ -408,7 +419,7 @@ function toOut(e) {
   return { x: (e.clientX - r.left) / r.width * f.w, y: (e.clientY - r.top) / r.height * f.h };
 }
 function hitTest(p) {
-  const order = ['logo', 'title', 'handle', 'progress', 'text'];
+  const order = ['note', 'logo', 'title', 'handle', 'progress', 'text'];
   for (const k of order) {
     const b = lastBoxes[k]; if (!b) continue;
     const pad = 14;
@@ -429,7 +440,9 @@ canvas.addEventListener('pointerdown', (e) => {
   selEl = hit; updateElbar(); drawPreview();
   if (!hit) return;
   const cur = resolveLayout(state.fmt, state.settings.layouts)[hit];
-  drag = { name: hit, p0: p, x0: cur.x, y0: cur.y, moved: false };
+  const f0 = FORMATS[state.fmt];
+  const x0 = hit === 'note' ? lastBoxes.note[0] / f0.w : cur.x, y0 = hit === 'note' ? lastBoxes.note[1] / f0.h : cur.y;
+  drag = { name: hit, p0: p, x0, y0, moved: false };
   canvas.setPointerCapture(e.pointerId);
   canvas.classList.add('is-dragging');
 });
@@ -442,7 +455,7 @@ canvas.addEventListener('pointermove', (e) => {
   const nx = Math.min(0.97, Math.max(-0.2, drag.x0 + (p.x - drag.p0.x) / f.w));
   const ny = Math.min(0.99, Math.max(0, drag.y0 + (p.y - drag.p0.y) / f.h));
   if (!drag.moved) { snapshotLayout(); drag.moved = true; }
-  setEl(drag.name, { x: +nx.toFixed(4), y: +ny.toFixed(4) });
+  setEl(drag.name, { x: +nx.toFixed(4), y: +ny.toFixed(4), rel: false });
   drawPreview();
 });
 function endDrag() { if (drag) { drag = null; canvas.classList.remove('is-dragging'); persist(); } }
@@ -684,6 +697,7 @@ function applySettingsUI() {
   $('optTitle').checked = state.settings.showTitle;
   $('optLogo').checked = state.settings.showLogo !== false;
   $('optKeys').value = String(state.settings.maxKeys || 1);
+  buildSwatches();
   $(state.dest === 'download' ? 'destDownload' : 'destFolder').checked = true;
   setLogo(state.settings.logo);
 }
@@ -691,9 +705,10 @@ function setLogo(dataUrl) {
   state.settings.logo = dataUrl || null;
   show($('btnLogoClear'), !!dataUrl);
   $('logoName').textContent = dataUrl ? 'Custom logo' : 'Official WDGTA logo';
+  if (!dataUrl) { logoImg = null; drawPreview(); return; }
   const img = new Image();
   img.onload = () => { logoImg = img; drawPreview(); };
-  img.src = dataUrl || OFFICIAL_LOGO;
+  img.src = dataUrl;
 }
 function newProject() {
   audio.pause();
@@ -707,6 +722,18 @@ function newProject() {
   show($('workspace'), false); show($('stepAudio'), true); show($('resume'), false);
   $('btnSave').disabled = true;
   try { localStorage.removeItem(STORE_KEY); } catch {}
+}
+
+function buildSwatches() {
+  $('bgSwatches').replaceChildren(...Object.entries(THEMES).map(([id, th]) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'swatch'; b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(state.settings.bg === id));
+    const dot = document.createElement('i'); dot.style.background = th.bg;
+    b.append(dot, document.createTextNode(th.name));
+    b.onclick = () => { state.settings.bg = id; buildSwatches(); persist(); drawPreview(); };
+    return b;
+  }));
 }
 
 // ---------------- wiring ----------------
@@ -744,6 +771,23 @@ function bind() {
   $('wSplit').onclick = splitHere;
   $('wJoin').onclick = joinPrev;
   $('wDel').onclick = deleteWord;
+  $('wMark').onchange = (e) => {
+    if (!sel) return; snapshot();
+    const wd = state.cards[sel.c].words[sel.w];
+    if (e.target.value) wd.mark = e.target.value; else delete wd.mark;
+    changed();
+  };
+  let noteSnap = false;
+  $('wNote').addEventListener('focus', () => { noteSnap = false; });
+  $('wNote').addEventListener('input', (e) => {
+    if (!sel) return;
+    if (!noteSnap) { snapshot(); noteSnap = true; }
+    const c = state.cards[sel.c];
+    if (e.target.value.trim()) c.note = e.target.value; else delete c.note;
+    persist(); drawPreview();
+  });
+  $('wNote').addEventListener('change', () => renderCards());
+  $('wNote').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); renderCards(); } });
   $('btnUndo').onclick = undo;
   $('btnRegroup').onclick = regroup;
   $('btnReplace').onclick = replaceAll;

@@ -104,6 +104,16 @@
           <button class="btn small" id="wJoin" type="button">Join previous screen</button>
           <button class="btn small danger" id="wDel" type="button">Delete</button>
           <span class="wordbar-time mono" id="wTime"></span>
+          <div class="wordbar-row">
+            <label class="mk-label" for="wMark">Marker</label>
+            <select id="wMark">
+              <option value="">None</option>
+              <option value="circle">Circle the word</option>
+              <option value="underline">Underline</option>
+              <option value="strike">Cross it out</option>
+            </select>
+            <input id="wNote" type="text" class="mk-note" placeholder="Handwritten note for this screen (optional)" aria-label="Marker note for this screen" autocomplete="off">
+          </div>
         </div>
 
         <ol class="cards" id="cards"></ol>
@@ -140,6 +150,10 @@
         <details class="settings" open>
           <summary>Look</summary>
           <div class="set-grid">
+            <div class="bg-field">
+              <span>Background</span>
+              <div class="swatches" id="bgSwatches" role="radiogroup" aria-label="Background colour"></div>
+            </div>
             <label class="check"><input type="checkbox" id="optUpper" checked> Capital letters</label>
             <label class="check"><input type="checkbox" id="optLogo" checked> Show logo</label>
             <label class="check"><input type="checkbox" id="optTitle" checked> Show title</label>
