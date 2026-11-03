@@ -37,6 +37,7 @@ const logoLight = new Image(), logoDark = new Image();
 logoLight.onload = logoDark.onload = () => drawPreview();
 logoLight.src = OFFICIAL_LOGO; logoDark.src = OFFICIAL_LOGO_DARK;
 let playClip = null;       // clip being played (stop at its end)
+let selClip = null;        // clip selected on the timeline
 const audio = new Audio();
 audio.preload = 'auto';
 
@@ -75,7 +76,10 @@ function snapshot() {
 function persist() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
 }
-function changed() { persist(); renderCards(); renderClips(); drawPreview(); $('btnSave').disabled = !state.cards.length; }
+function changed() {
+  persist(); renderCards(); renderClips(); drawPreview(); tlInvalidate();
+  $('btnSave').disabled = !state.cards.length; $('btnExportTop').disabled = !state.cards.length;
+}
 
 // ---------------- audio loading ----------------
 async function setAudio(file) {
@@ -96,6 +100,8 @@ async function setAudio(file) {
   show($('resume'), false);
   updateTime();
   drawPreview();
+  peaks = null; tlInvalidate();
+  getAudio48().then(computePeaks).catch(() => {});
 }
 
 async function decodeAll(file, sampleRate) {
@@ -208,6 +214,7 @@ function renderCards() {
 function updateWordbar() {
   const on = !!(sel && state.cards[sel.c] && state.cards[sel.c].words[sel.w]);
   show($('wordbar'), on);
+  show($('markerBody'), on); show($('markerEmpty'), !on);
   if (!on) { sel = null; return; }
   const c = state.cards[sel.c], wd = c.words[sel.w];
   if (document.activeElement !== $('wordText')) $('wordText').value = wd.w;
@@ -373,7 +380,7 @@ function markNow() {
 }
 function tick() {
   if (playClip && audio.currentTime >= playClip.end) { audio.pause(); stopClipPlayback(); }
-  drawPreview(); updateTime(); markNow();
+  drawPreview(); updateTime(); markNow(); drawTimeline(true);
   if (!audio.paused) requestAnimationFrame(tick);
 }
 function updateTime() {
@@ -384,7 +391,9 @@ function updateTime() {
 }
 function setPlayLabels() {
   const l = audio.paused ? 'Play' : 'Pause';
-  $('btnPlay').textContent = l; $('fsPlay').textContent = l;
+  $('btnPlay').classList.toggle('is-playing', !audio.paused);
+  $('btnPlay').setAttribute('aria-label', l);
+  $('fsPlay').textContent = l;
 }
 function togglePlay() {
   if (!audioFile) return;
@@ -457,7 +466,7 @@ canvas.addEventListener('pointermove', (e) => {
   const ny = Math.min(0.99, Math.max(0, drag.y0 + (p.y - drag.p0.y) / f.h));
   if (!drag.moved) { snapshotLayout(); drag.moved = true; }
   setEl(drag.name, { x: +nx.toFixed(4), y: +ny.toFixed(4), rel: false });
-  drawPreview();
+  drawPreview(); updateElbar();
 });
 function endDrag() { if (drag) { drag = null; canvas.classList.remove('is-dragging'); persist(); } }
 canvas.addEventListener('pointerup', endDrag);
@@ -472,10 +481,18 @@ canvas.addEventListener('wheel', (e) => {
 function snapshotLayout() { /* positions are cheap to reset; no undo entry needed */ }
 function updateElbar() {
   show($('elbar'), !!selEl);
+  show($('elHint'), !selEl);
+  document.querySelectorAll('.layers li').forEach((li) => li.classList.toggle('is-sel', li.querySelector('[data-el]')?.dataset.el === selEl));
   if (!selEl) return;
+  const f = FORMATS[state.fmt];
   const cur = resolveLayout(state.fmt, state.settings.layouts)[selEl];
-  $('elName').textContent = `${ELEMENTS[selEl]} · ${FORMATS[state.fmt].label}`;
+  $('elName').textContent = `${ELEMENTS[selEl]} · ${f.label}`;
   $('elSize').value = Math.round((cur.s || 1) * 100);
+  $('elSizeOut').textContent = `${Math.round((cur.s || 1) * 100)}%`;
+  let x = cur.x * f.w, y = cur.y * f.h;
+  if (selEl === 'note' && cur.rel !== false && lastBoxes.note) { x = lastBoxes.note[0]; y = lastBoxes.note[1]; }
+  if (document.activeElement !== $('elX')) $('elX').value = Math.round(x);
+  if (document.activeElement !== $('elY')) $('elY').value = Math.round(y);
 }
 
 // ---------------- full screen ----------------
@@ -496,7 +513,8 @@ function renderClips() {
   } else {
     ol.replaceChildren(...state.clips.map((c, i) => {
       const li = document.createElement('li');
-      li.className = 'clip' + (playClip && playClip.id === c.id ? ' is-playing' : '');
+      li.className = 'clip' + (playClip && playClip.id === c.id ? ' is-playing' : '') + (selClip === c.id ? ' is-sel' : '');
+      li.dataset.id = c.id;
       li.innerHTML = `
         <input type="text" aria-label="Clip name" value="">
         <button class="btn small" data-act="play" type="button">${playClip && playClip.id === c.id ? 'Stop' : 'Play'}</button>
@@ -730,12 +748,182 @@ function buildSwatches() {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'swatch'; b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(state.settings.bg === id));
-    const dot = document.createElement('i'); dot.style.background = th.bg;
-    b.append(dot, document.createTextNode(th.name));
+    b.style.background = th.bg;
+    b.title = th.name; b.setAttribute('aria-label', th.name);
     b.onclick = () => { state.settings.bg = id; buildSwatches(); persist(); drawPreview(); };
     return b;
   }));
 }
+
+// ---------------- inspector tabs ----------------
+function setTab(name) {
+  document.querySelectorAll('#insTabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
+  document.querySelectorAll('.tabpanel').forEach((p) => { p.hidden = p.dataset.panel !== name; });
+}
+
+// ---------------- timeline ----------------
+const tl = $('tl');
+const tlScroll = $('tlScroll');
+let peaks = null, tlStatic = null, tlZoomLevel = 1, tlW = 0, tlDrag = null;
+const TL = { ruler: [0, 20], clips: [26, 26], screens: [58, 30], audio: [94, 50], h: 150 };
+function computePeaks(buf) {
+  const ch = buf.getChannelData(0), n = 4000, step = Math.max(1, Math.floor(ch.length / n));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let m = 0; const a = i * step, b = Math.min(ch.length, a + step);
+    for (let j = a; j < b; j += 4) { const v = Math.abs(ch[j]); if (v > m) m = v; }
+    out[i] = m;
+  }
+  let max = 0; for (const v of out) if (v > max) max = v;
+  if (max > 0) for (let i = 0; i < n; i++) out[i] /= max;
+  peaks = out; tlInvalidate();
+}
+const tX = (t) => (t / Math.max(0.1, totalDur())) * tlW;
+const xT = (x) => Math.min(totalDur(), Math.max(0, x / Math.max(1, tlW) * totalDur()));
+function tlInvalidate() { tlStatic = null; drawTimeline(); }
+function buildTimelineStatic() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  tlW = Math.max(200, Math.round(tlScroll.clientWidth * tlZoomLevel));
+  tl.style.width = tlW + 'px';
+  tl.width = Math.round(tlW * dpr); tl.height = Math.round(TL.h * dpr);
+  const off = document.createElement('canvas'); off.width = tl.width; off.height = tl.height;
+  const c = off.getContext('2d'); c.scale(dpr, dpr);
+  const dur = totalDur();
+  // ruler
+  const pps = tlW / Math.max(1, dur);
+  const steps = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+  const step = steps.find((st) => st * pps >= 70) || 600;
+  c.font = '400 10px "IBM Plex Mono", monospace'; c.textBaseline = 'top';
+  for (let t = 0; t <= dur; t += step) {
+    const x = Math.round(tX(t)) + 0.5;
+    c.fillStyle = '#3A3833'; c.fillRect(x, 12, 1, 8);
+    c.fillStyle = '#8C887F'; c.fillText(fmtTime(t), x + 3, 1);
+  }
+  // clips
+  const [cy, ch] = TL.clips;
+  c.font = '500 11px "Archivo", sans-serif'; c.textBaseline = 'middle';
+  for (const cl of state.clips) {
+    const x0 = tX(cl.start), x1 = tX(cl.end);
+    const sel = cl.id === selClip;
+    c.fillStyle = sel ? '#FFC71033' : '#FFC7101A'; c.fillRect(x0, cy, x1 - x0, ch);
+    c.strokeStyle = '#FFC710'; c.lineWidth = sel ? 2 : 1; c.strokeRect(x0 + 0.5, cy + 0.5, x1 - x0 - 1, ch - 1);
+    c.fillStyle = '#FFC710'; c.fillRect(x0, cy, 3, ch); c.fillRect(x1 - 3, cy, 3, ch);
+    c.save(); c.beginPath(); c.rect(x0 + 6, cy, Math.max(0, x1 - x0 - 12), ch); c.clip();
+    c.fillText(cl.name || 'Clip', x0 + 8, cy + ch / 2); c.restore();
+  }
+  // screens
+  const [sy, sh] = TL.screens;
+  c.font = '500 10px "IBM Plex Mono", monospace';
+  state.cards.forEach((cd, i) => {
+    const nx = state.cards[i + 1];
+    const x0 = tX(cardStart(cd)), x1 = Math.max(x0 + 2, tX(nx ? cardStart(nx) : cardEnd(cd))) - 1;
+    c.fillStyle = cd.note || cd.words.some((w) => w.mark) ? '#3B2A22' : '#2C2A26';
+    c.fillRect(x0, sy, x1 - x0, sh);
+    if (x1 - x0 > 24) {
+      c.save(); c.beginPath(); c.rect(x0 + 4, sy, x1 - x0 - 8, sh); c.clip();
+      c.fillStyle = '#BFBAB0'; c.fillText(cd.words.map((w) => w.w).join(' ').toUpperCase(), x0 + 5, sy + sh / 2); c.restore();
+    }
+  });
+  // audio
+  const [ay, ah] = TL.audio; const mid = ay + ah / 2;
+  c.fillStyle = '#5E5B55';
+  if (peaks) {
+    const n = peaks.length, bw = Math.max(1, tlW / n);
+    const stride = Math.max(1, Math.floor(n / tlW));
+    for (let i = 0; i < n; i += stride) {
+      let m = 0; for (let j = i; j < i + stride && j < n; j++) m = Math.max(m, peaks[j]);
+      const hh = Math.max(1, m * ah * 0.95);
+      c.fillRect(i / n * tlW, mid - hh / 2, Math.max(1, bw * stride - (bw * stride > 2 ? 1 : 0)), hh);
+    }
+  } else { c.fillRect(0, mid, tlW, 1); }
+  tlStatic = off;
+}
+function drawTimeline(follow = false) {
+  if ($('workspace').hidden || !state.cards.length) return;
+  if (!tlStatic || Math.abs(tlW - Math.max(200, Math.round(tlScroll.clientWidth * tlZoomLevel))) > 2) buildTimelineStatic();
+  const dpr = tl.width / tlW;
+  const c = tl.getContext('2d');
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.drawImage(tlStatic, 0, 0);
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const t = audio.currentTime || 0;
+  const ci = cardAt(state.cards, t);
+  if (ci >= 0) {
+    const cd = state.cards[ci], nx = state.cards[ci + 1];
+    const x0 = tX(cardStart(cd)), x1 = tX(nx ? cardStart(nx) : cardEnd(cd)) - 1;
+    c.strokeStyle = '#E7ECF2'; c.lineWidth = 1; c.strokeRect(x0 + 0.5, TL.screens[0] + 0.5, Math.max(1, x1 - x0 - 1), TL.screens[1] - 1);
+  }
+  const px = Math.round(tX(t));
+  c.fillStyle = '#E7ECF2'; c.fillRect(px - 1, 0, 2, TL.h);
+  c.beginPath(); c.moveTo(px - 5, 0); c.lineTo(px + 5, 0); c.lineTo(px, 7); c.fill();
+  if (follow && !audio.paused) {
+    const L = tlScroll.scrollLeft, W = tlScroll.clientWidth;
+    if (px < L || px > L + W - 30) tlScroll.scrollLeft = px - 40;
+  }
+}
+function tlHit(x, y) {
+  if (y >= TL.clips[0] && y <= TL.clips[0] + TL.clips[1]) {
+    for (let i = state.clips.length - 1; i >= 0; i--) {
+      const cl = state.clips[i], x0 = tX(cl.start), x1 = tX(cl.end);
+      if (Math.abs(x - x0) <= 6) return { kind: 'start', i };
+      if (Math.abs(x - x1) <= 6) return { kind: 'end', i };
+      if (x > x0 && x < x1) return { kind: 'clip', i };
+    }
+  }
+  return { kind: 'seek' };
+}
+function seekTo(t) {
+  if (playClip) stopClipPlayback();
+  audio.currentTime = Math.max(0, Math.min(totalDur(), t));
+  updateTime(); drawPreview(); markNow(); drawTimeline();
+}
+tl.addEventListener('pointerdown', (e) => {
+  if (!state.cards.length) return;
+  const h = tlHit(e.offsetX, e.offsetY);
+  tl.setPointerCapture(e.pointerId);
+  if (h.kind === 'start' || h.kind === 'end') { tlDrag = { ...h, moved: false }; return; }
+  if (h.kind === 'clip') {
+    const cl = state.clips[h.i];
+    selClip = cl.id; setTab('clips'); renderClips(); tlInvalidate();
+    seekTo(cl.start);
+    document.querySelector(`.clip[data-id="${cl.id}"]`)?.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  tlDrag = { kind: 'seek' };
+  seekTo(xT(e.offsetX));
+});
+tl.addEventListener('pointermove', (e) => {
+  if (!tlDrag) {
+    const h = tlHit(e.offsetX, e.offsetY);
+    tl.style.cursor = h.kind === 'start' || h.kind === 'end' ? 'ew-resize' : 'pointer';
+    return;
+  }
+  const t = xT(e.offsetX);
+  if (tlDrag.kind === 'seek') { seekTo(t); return; }
+  const cl = state.clips[tlDrag.i];
+  if (!tlDrag.moved) { snapshot(); tlDrag.moved = true; }
+  if (tlDrag.kind === 'start') cl.start = +Math.min(t, cl.end - 1).toFixed(2);
+  else cl.end = +Math.max(t, cl.start + 1).toFixed(2);
+  tlInvalidate();
+});
+function tlEnd() {
+  if (tlDrag && tlDrag.moved) { state.clips.sort((a, b) => a.start - b.start); persist(); renderClips(); }
+  tlDrag = null;
+}
+tl.addEventListener('pointerup', tlEnd);
+tl.addEventListener('pointercancel', tlEnd);
+function setZoom(z, anchorT = audio.currentTime || 0) {
+  tlZoomLevel = Math.min(40, Math.max(1, z));
+  $('tlZoom').value = String(Math.round(tlZoomLevel));
+  tlStatic = null; drawTimeline();
+  tlScroll.scrollLeft = tX(anchorT) - tlScroll.clientWidth / 2;
+}
+tlScroll.addEventListener('wheel', (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault();
+  setZoom(tlZoomLevel * (e.deltaY < 0 ? 1.15 : 0.87), xT(e.offsetX));
+}, { passive: false });
+new ResizeObserver(() => { tlStatic = null; drawTimeline(); }).observe(tlScroll);
 
 const SPEEDS = [0.5, 1, 1.5, 2];
 let speed = 1;
@@ -837,7 +1025,7 @@ function bind() {
   $('btnLogoClear').onclick = () => { setLogo(null); persist(); };
   $('btnLayoutReset').onclick = () => { delete state.settings.layouts[state.fmt]; selEl = null; updateElbar(); persist(); drawPreview(); };
 
-  $('elSize').oninput = (e) => { if (!selEl) return; setEl(selEl, { s: +e.target.value / 100 }); drawPreview(); persist(); };
+  $('elSize').oninput = (e) => { if (!selEl) return; setEl(selEl, { s: +e.target.value / 100 }); $('elSizeOut').textContent = `${e.target.value}%`; drawPreview(); persist(); };
   $('elReset').onclick = () => {
     if (!selEl) return;
     const lay = layoutFor(state.fmt); delete lay[selEl];
@@ -846,6 +1034,21 @@ function bind() {
   $('elDone').onclick = () => { selEl = null; updateElbar(); drawPreview(); };
 
   $('btnSplit').onclick = splitAuto;
+  $('insTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
+  $('btnExportTop').onclick = () => setTab('export');
+  $('btnOpen2').onclick = () => $('openFile').click();
+  $('btnBack').onclick = () => seekTo((audio.currentTime || 0) - 5);
+  $('btnFwd').onclick = () => seekTo((audio.currentTime || 0) + 5);
+  $('tlZoom').oninput = (e) => setZoom(+e.target.value);
+  $('tlFit').onclick = () => setZoom(1);
+  document.querySelectorAll('.layer-name').forEach((b) => b.onclick = () => { selEl = b.dataset.el; updateElbar(); drawPreview(); });
+  const applyXY = () => {
+    if (!selEl) return;
+    const f = FORMATS[state.fmt];
+    setEl(selEl, { x: +(+$('elX').value / f.w).toFixed(4), y: +(+$('elY').value / f.h).toFixed(4), rel: false });
+    drawPreview(); persist();
+  };
+  $('elX').onchange = applyXY; $('elY').onchange = applyXY;
   $('btnAddClip').onclick = addClipAtPlayhead;
 
   $('destFolder').onchange = () => { state.dest = 'folder'; persist(); };

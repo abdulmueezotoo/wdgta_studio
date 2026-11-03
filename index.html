@@ -8,233 +8,251 @@
 <link rel="icon" href="favicon.ico" sizes="any">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
-<meta name="theme-color" content="#0E0E0C">
+<meta name="theme-color" content="#0B0B0A">
 <link rel="stylesheet" href="css/studio.css">
 </head>
 <body>
 <div class="app">
-  <aside class="rail" aria-label="WDGTA system">
-    <div class="mark">
-      <span class="mark-word">WDGTA</span>
-      <span class="mark-sub">Operating System</span>
-    </div>
-    <nav class="modules">
-      <a class="module is-active" href="#studio" aria-current="page"><span class="mod-no">01</span>Studio<span class="mod-tag">Audio → video</span></a>
-      <span class="module is-later"><span class="mod-no">02</span>Guest pipeline<span class="mod-tag">Later</span></span>
-      <span class="module is-later"><span class="mod-no">03</span>Episode board<span class="mod-tag">Later</span></span>
-      <span class="module is-later"><span class="mod-no">04</span>Content calendar<span class="mod-tag">Later</span></span>
-      <span class="module is-later"><span class="mod-no">05</span>Reality Radar<span class="mod-tag">Later</span></span>
+  <header class="topbar">
+    <img class="brand" src="assets/wdgta-logo-white.png" alt="We Dey Go Through Am">
+    <span class="divider" aria-hidden="true"></span>
+    <nav class="modules" aria-label="WDGTA modules">
+      <a class="module is-active" href="#studio" aria-current="page">Studio</a>
+      <span class="module is-later" title="Coming later">Guests</span>
+      <span class="module is-later" title="Coming later">Episodes</span>
+      <span class="module is-later" title="Coming later">Calendar</span>
+      <span class="module is-later" title="Coming later">Reality Radar</span>
     </nav>
-    <p class="rail-foot">Beyond the Success Stories.</p>
-  </aside>
+    <input id="projTitle" class="proj-title" type="text" placeholder="Untitled project" aria-label="Project title (also shown on the video)" autocomplete="off">
+    <div class="top-actions">
+      <button class="btn ghost" id="btnOpen" type="button">Open</button>
+      <button class="btn ghost" id="btnSave" type="button" disabled>Save</button>
+      <button class="btn ghost" id="btnNew" type="button">New</button>
+      <button class="btn primary" id="btnExportTop" type="button" disabled>Export…</button>
+      <input id="openFile" type="file" accept=".json,application/json" hidden>
+    </div>
+  </header>
 
-  <main class="main" id="studio">
-    <header class="topbar">
-      <div class="title-wrap">
-        <label class="eyebrow" for="projTitle">Episode / clip title</label>
-        <input id="projTitle" class="proj-title" type="text" placeholder="e.g. Mini-Episode · Before You Build" autocomplete="off">
-      </div>
-      <div class="top-actions">
-        <button class="btn ghost" id="btnOpen" type="button">Open project</button>
-        <button class="btn ghost" id="btnSave" type="button" disabled>Save project</button>
-        <button class="btn ghost" id="btnNew" type="button">New</button>
-        <input id="openFile" type="file" accept=".json,application/json" hidden>
-      </div>
-    </header>
+  <div class="notice" id="resume" hidden></div>
 
-    <div class="notice" id="resume" hidden></div>
-
-    <!-- STEP 1: AUDIO -->
-    <section class="step" id="stepAudio" aria-labelledby="h-audio">
-      <div class="step-head">
-        <span class="step-no">Step 1</span>
-        <h1 id="h-audio">Add the recording</h1>
-        <p class="lede">Upload the episode audio. Studio listens to it on this computer, writes down every word with its timing, and turns it into a captioned video. Your audio is never uploaded anywhere.</p>
-      </div>
-
+  <!-- START: add a recording -->
+  <section class="welcome" id="stepAudio" aria-labelledby="h-audio">
+    <div class="welcome-card">
+      <h1 id="h-audio">New project</h1>
+      <p class="lede">Add an episode or clip recording. Studio writes down every word with its timing on this computer, then turns it into branded captioned videos. Your audio is never uploaded.</p>
       <label class="drop" id="drop" for="audioFile">
         <input id="audioFile" type="file" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.mp4" hidden>
-        <span class="drop-big">Drop an audio file here</span>
-        <span class="drop-small">or click to choose · MP3, M4A, WAV, AAC or a video file</span>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg>
+        <span class="drop-big">Drop an audio file, or click to choose</span>
+        <span class="drop-small">MP3, M4A, WAV, AAC, or a video file</span>
         <span class="drop-file" id="dropFile" hidden></span>
       </label>
-
       <div class="row-opts">
-        <div class="field">
-          <label for="quality">Transcription quality</label>
+        <label class="field" for="quality">Transcription quality
           <select id="quality">
-            <option value="fast">Fast — quick drafts</option>
-            <option value="balanced" selected>Balanced — recommended</option>
-            <option value="accurate">Accurate — slower, best for accents</option>
+            <option value="fast">Fast (quick drafts)</option>
+            <option value="balanced" selected>Balanced (recommended)</option>
+            <option value="accurate">Accurate (slower, best for accents)</option>
           </select>
-        </div>
-        <button class="btn primary" id="btnTranscribe" type="button" disabled>Transcribe</button>
+        </label>
+        <button class="btn primary big" id="btnTranscribe" type="button" disabled>Transcribe</button>
       </div>
-
       <div class="job" id="job" hidden>
         <div class="job-line"><span id="jobText">Preparing…</span><span class="mono" id="jobPct"></span></div>
         <div class="bar"><span id="jobBar"></span></div>
-        <p class="hint">The first run downloads the speech model (about 80–250 MB depending on quality). After that it is cached in this browser.</p>
+        <p class="hint">The first run downloads the speech model (about 80–250 MB depending on quality). After that it stays in this browser.</p>
       </div>
       <p class="error" id="audioError" role="alert" hidden></p>
+      <p class="hint">Or <button class="linkbtn" id="btnOpen2" type="button">open a saved project</button>.</p>
+    </div>
+  </section>
+
+  <!-- THE SUITE -->
+  <div class="suite" id="workspace" hidden>
+
+    <section class="panel transcript" aria-label="Transcript">
+      <div class="panel-head">
+        <h2>Transcript</h2>
+        <div class="head-tools">
+          <button class="btn small ghost" id="btnUndo" type="button" disabled>Undo</button>
+          <button class="btn small ghost" id="btnRegroup" type="button" title="Rebuild the screens automatically from the words">Regroup</button>
+        </div>
+      </div>
+      <div class="find">
+        <input id="findText" type="text" placeholder="Find" aria-label="Find word">
+        <input id="replText" type="text" placeholder="Replace with" aria-label="Replace with">
+        <button class="btn small" id="btnReplace" type="button">Replace all</button>
+      </div>
+      <div class="wordbar" id="wordbar" hidden>
+        <input id="wordText" type="text" aria-label="Edit word" autocomplete="off">
+        <button class="btn small primary" id="wApply" type="button">Apply</button>
+        <button class="btn small" id="wKey" type="button">Make yellow</button>
+        <button class="btn small" id="wSplit" type="button">New screen here</button>
+        <button class="btn small" id="wJoin" type="button">Join previous</button>
+        <button class="btn small danger" id="wDel" type="button">Delete</button>
+        <span class="wordbar-time mono" id="wTime"></span>
+      </div>
+      <ol class="cards" id="cards"></ol>
+      <p class="stats mono" id="stats"></p>
     </section>
 
-    <!-- STEP 2 + 3: EDIT, PREVIEW, EXPORT -->
-    <section class="workspace" id="workspace" hidden>
-      <div class="editor-col">
-        <div class="col-head">
-          <span class="step-no">Step 2</span>
-          <h2>Check the words</h2>
-          <p class="hint">Click a word to fix it, highlight it in yellow, or start a new screen from it. Your script is the reference for anything the model misheard.</p>
-        </div>
-
-        <div class="tools">
-          <div class="find">
-            <input id="findText" type="text" placeholder="Find word" aria-label="Find word">
-            <input id="replText" type="text" placeholder="Replace with" aria-label="Replace with">
-            <button class="btn small" id="btnReplace" type="button">Replace all</button>
-          </div>
-          <div class="tools-right">
-            <button class="btn small ghost" id="btnUndo" type="button" disabled>Undo</button>
-            <button class="btn small ghost" id="btnRegroup" type="button" title="Rebuild the screens automatically from the words">Regroup screens</button>
-          </div>
-        </div>
-
-        <div class="wordbar" id="wordbar" hidden>
-          <input id="wordText" type="text" aria-label="Edit word" autocomplete="off">
-          <button class="btn small primary" id="wApply" type="button">Apply</button>
-          <button class="btn small" id="wKey" type="button">Make yellow</button>
-          <button class="btn small" id="wSplit" type="button">New screen from here</button>
-          <button class="btn small" id="wJoin" type="button">Join previous screen</button>
-          <button class="btn small danger" id="wDel" type="button">Delete</button>
-          <span class="wordbar-time mono" id="wTime"></span>
-          <div class="wordbar-row">
-            <label class="mk-label" for="wMark">Marker</label>
-            <select id="wMark">
-              <option value="">None</option>
-              <option value="circle">Circle the word</option>
-              <option value="underline">Underline</option>
-              <option value="strike">Cross it out</option>
-            </select>
-            <input id="wNote" type="text" class="mk-note" placeholder="Handwritten note for this screen (optional)" aria-label="Marker note for this screen" autocomplete="off">
-          </div>
-        </div>
-
-        <ol class="cards" id="cards"></ol>
-        <p class="hint stats mono" id="stats"></p>
-      </div>
-
-      <div class="preview-col">
-        <div class="col-head">
-          <span class="step-no">Preview · drag anything to move it</span>
-          <div class="fmt-tabs" role="tablist" id="fmtTabs"></div>
-        </div>
-        <div class="stage" id="stage">
-          <canvas id="canvas" aria-label="Video preview. Drag the words, logo, title or handle to move them."></canvas>
-          <div class="fs-bar" id="fsBar">
-            <button class="btn small" id="fsPlay" type="button">Play</button>
-            <span class="mono time" id="fsTime">0:00</span>
-            <div class="speed" role="group" aria-label="Playback speed" data-speed-group></div>
-            <button class="btn small" id="fsExit" type="button">Exit full screen</button>
-          </div>
-        </div>
-        <div class="transport">
-          <button class="btn icon" id="btnPlay" type="button">Play</button>
-          <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Position">
-          <span class="mono time" id="timeLbl">0:00 / 0:00</span>
+    <section class="viewer" aria-label="Viewer">
+      <div class="fmt-tabs" role="tablist" id="fmtTabs"></div>
+      <div class="stage" id="stage">
+        <canvas id="canvas" aria-label="Video preview. Drag the words, logo, title, handle or note to move them."></canvas>
+        <div class="fs-bar" id="fsBar">
+          <button class="btn small" id="fsPlay" type="button">Play</button>
+          <span class="mono time" id="fsTime">0:00</span>
           <div class="speed" role="group" aria-label="Playback speed" data-speed-group></div>
-          <button class="btn small ghost" id="btnFull" type="button" title="Full-screen preview">Full screen</button>
-        </div>
-        <div class="elbar" id="elbar" hidden>
-          <span class="elbar-name" id="elName">Logo</span>
-          <label class="elbar-size">Size <input type="range" id="elSize" min="40" max="250" value="100"></label>
-          <button class="btn small ghost" id="elReset" type="button">Reset position</button>
-          <button class="btn small ghost" id="elDone" type="button">Done</button>
-        </div>
-        <p class="hint" id="noAudio" hidden>Add the audio file to preview and export: <label class="link" for="audioFile2">choose audio</label><input id="audioFile2" type="file" accept="audio/*,video/*" hidden></p>
-
-        <details class="settings" open>
-          <summary>Look</summary>
-          <div class="set-grid">
-            <div class="bg-field">
-              <span>Background</span>
-              <div class="swatches" id="bgSwatches" role="radiogroup" aria-label="Background colour"></div>
-            </div>
-            <label class="check"><input type="checkbox" id="optUpper" checked> Capital letters</label>
-            <label class="check"><input type="checkbox" id="optLogo" checked> Show logo</label>
-            <label class="check"><input type="checkbox" id="optTitle" checked> Show title</label>
-            <label class="check"><input type="checkbox" id="optHandle" checked> Show @wedeygothrougham</label>
-            <label class="check"><input type="checkbox" id="optProgress" checked> Progress line</label>
-            <div class="field-inline">
-              <label for="optKeys">Yellow words per screen</label>
-              <select id="optKeys"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select>
-              <button class="btn small ghost" id="btnRepick" type="button" title="Re-pick the yellow words on every screen">Apply to all screens</button>
-            </div>
-            <div class="logo-field">
-              <span>Logo</span>
-              <div class="logo-row">
-                <span class="mono hint" id="logoName">Official WDGTA logo</span>
-                <label class="btn small" for="logoFile">Use a different logo</label>
-                <input id="logoFile" type="file" accept="image/png,image/svg+xml,image/webp" hidden>
-                <button class="btn small ghost" id="btnLogoClear" type="button" hidden>Back to official logo</button>
-              </div>
-            </div>
-            <div class="field-inline wide">
-              <button class="btn small ghost" id="btnLayoutReset" type="button">Reset all positions for this size</button>
-            </div>
-          </div>
-        </details>
-
-        <div class="clips">
-          <div class="col-head">
-            <span class="step-no">Clips</span>
-            <h2>Cut it into clips</h2>
-            <p class="hint">Make short clips from the full recording. Split it automatically, or add a clip and set its start and end from the play position.</p>
-          </div>
-          <div class="clip-tools">
-            <label class="field-inline">Split into clips of about
-              <select id="clipLen"><option value="30">30 s</option><option value="45">45 s</option><option value="60" selected>60 s</option><option value="90">90 s</option></select>
-            </label>
-            <button class="btn small" id="btnSplit" type="button">Split automatically</button>
-            <button class="btn small" id="btnAddClip" type="button">Add clip at play position</button>
-          </div>
-          <ol class="clip-list" id="clipList"></ol>
-        </div>
-
-        <div class="export">
-          <div class="col-head">
-            <span class="step-no">Step 3</span>
-            <h2>Export</h2>
-          </div>
-          <div class="ex-group">
-            <span class="ex-label">What</span>
-            <div class="ex-what" id="exWhat"></div>
-          </div>
-          <div class="ex-group">
-            <span class="ex-label">Sizes</span>
-            <div class="fmt-list" id="fmtList"></div>
-          </div>
-          <div class="ex-group">
-            <span class="ex-label">Save to</span>
-            <div class="ex-dest">
-              <label class="radio"><input type="radio" name="dest" value="folder" id="destFolder" checked> <span><b>A folder</b> on this computer or your <b>Google Drive</b> folder</span></label>
-              <label class="radio"><input type="radio" name="dest" value="download" id="destDownload"> <span><b>Downloads</b> (the browser saves each file)</span></label>
-              <p class="hint" id="destHint">To save straight to Google Drive, install Google Drive for desktop, then pick a folder inside "Google Drive" when asked. It uploads automatically.</p>
-            </div>
-          </div>
-          <div class="export-actions">
-            <button class="btn primary" id="btnExport" type="button">Export videos</button>
-            <button class="btn" id="btnStill" type="button" title="Save the current preview frame as a PNG image">Save this frame as image</button>
-            <button class="btn ghost" id="btnCancel" type="button" hidden>Cancel</button>
-          </div>
-          <div class="bar ex-bar" hidden id="exBarWrap"><span id="exBar"></span></div>
-          <p class="hint" id="exportHint"></p>
-          <ul class="downloads" id="downloads"></ul>
-          <p class="error" id="exportError" role="alert" hidden></p>
+          <button class="btn small" id="fsExit" type="button">Exit full screen</button>
         </div>
       </div>
+      <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Position" class="scrub">
+      <div class="transport">
+        <button class="icon-btn" id="btnBack" type="button" aria-label="Back 5 seconds"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M11 19 4 12l7-7M20 19l-7-7 7-7"/></svg></button>
+        <button class="play-btn" id="btnPlay" type="button" aria-label="Play"><svg class="i-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg><svg class="i-pause" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg></button>
+        <button class="icon-btn" id="btnFwd" type="button" aria-label="Forward 5 seconds"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m13 5 7 7-7 7M4 5l7 7-7 7"/></svg></button>
+        <span class="mono time" id="timeLbl">0:00 / 0:00</span>
+        <span class="tsep" aria-hidden="true"></span>
+        <div class="speed" role="group" aria-label="Playback speed" data-speed-group></div>
+        <button class="btn small ghost" id="btnFull" type="button">Full screen</button>
+      </div>
+      <p class="hint" id="noAudio" hidden>Add the audio file to preview and export: <label class="link" for="audioFile2">choose audio</label><input id="audioFile2" type="file" accept="audio/*,video/*" hidden></p>
     </section>
-  </main>
+
+    <aside class="panel inspector" aria-label="Inspector">
+      <div class="tabs" role="tablist" id="insTabs">
+        <button type="button" role="tab" data-tab="design" aria-selected="true">Design</button>
+        <button type="button" role="tab" data-tab="marker" aria-selected="false">Marker</button>
+        <button type="button" role="tab" data-tab="clips" aria-selected="false">Clips</button>
+        <button type="button" role="tab" data-tab="export" aria-selected="false">Export</button>
+      </div>
+
+      <div class="tabpanel" data-panel="design">
+        <div class="group" id="elbar" hidden>
+          <div class="group-head"><span class="label">Selected</span><button class="linkbtn" id="elDone" type="button">Deselect</button></div>
+          <strong id="elName">Logo</strong>
+          <div class="num-grid">
+            <label class="num"><span>X</span><input id="elX" type="number" step="1"></label>
+            <label class="num"><span>Y</span><input id="elY" type="number" step="1"></label>
+            <label class="num wide"><span>Size</span><input type="range" id="elSize" min="40" max="250" value="100"><output id="elSizeOut" class="mono">100%</output></label>
+          </div>
+          <button class="btn small ghost" id="elReset" type="button">Reset position</button>
+        </div>
+        <p class="hint" id="elHint">Click or drag anything in the preview to move it. Arrow keys nudge it; hold Shift to move further.</p>
+
+        <div class="group">
+          <span class="label">Background</span>
+          <div class="swatches" id="bgSwatches" role="radiogroup" aria-label="Background colour"></div>
+        </div>
+
+        <div class="group">
+          <span class="label">Layers</span>
+          <ul class="layers">
+            <li><button class="layer-name" type="button" data-el="text">Words</button><span class="layer-fixed mono">always</span></li>
+            <li><button class="layer-name" type="button" data-el="note">Marker note</button><span class="layer-fixed mono">per screen</span></li>
+            <li><button class="layer-name" type="button" data-el="logo">Logo</button><label class="eye"><input type="checkbox" id="optLogo" checked><span class="sr">Show logo</span></label></li>
+            <li><button class="layer-name" type="button" data-el="title">Title</button><label class="eye"><input type="checkbox" id="optTitle" checked><span class="sr">Show title</span></label></li>
+            <li><button class="layer-name" type="button" data-el="handle">@wedeygothrougham</button><label class="eye"><input type="checkbox" id="optHandle" checked><span class="sr">Show handle</span></label></li>
+            <li><button class="layer-name" type="button" data-el="progress">Progress line</button><label class="eye"><input type="checkbox" id="optProgress" checked><span class="sr">Show progress line</span></label></li>
+          </ul>
+        </div>
+
+        <div class="group">
+          <span class="label">Words</span>
+          <label class="row-field">Yellow words per screen
+            <select id="optKeys"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select>
+          </label>
+          <button class="btn small ghost" id="btnRepick" type="button">Apply to all screens</button>
+          <label class="check"><input type="checkbox" id="optUpper" checked> Capital letters</label>
+        </div>
+
+        <div class="group">
+          <span class="label">Logo</span>
+          <div class="logo-row">
+            <span class="hint" id="logoName">Official WDGTA logo</span>
+            <label class="btn small ghost" for="logoFile">Replace</label>
+            <input id="logoFile" type="file" accept="image/png,image/svg+xml,image/webp" hidden>
+            <button class="btn small ghost" id="btnLogoClear" type="button" hidden>Use official</button>
+          </div>
+        </div>
+        <button class="btn small ghost" id="btnLayoutReset" type="button">Reset all positions for this size</button>
+      </div>
+
+      <div class="tabpanel" data-panel="marker" hidden>
+        <p class="hint" id="markerEmpty">Click a word in the transcript to circle, underline or cross it out, or to add a handwritten note to its screen.</p>
+        <div class="group" id="markerBody" hidden>
+          <span class="label">Mark this word</span>
+          <select id="wMark" aria-label="Marker on the selected word">
+            <option value="">None</option>
+            <option value="circle">Circle</option>
+            <option value="underline">Underline</option>
+            <option value="strike">Cross it out</option>
+          </select>
+          <span class="label">Note for this screen</span>
+          <textarea id="wNote" class="mk-note" rows="3" placeholder="e.g. This is the trap most of us fall into" aria-label="Handwritten note for this screen"></textarea>
+          <p class="hint">The note writes itself on with an arrow. Drag it in the preview to place it.</p>
+        </div>
+      </div>
+
+      <div class="tabpanel" data-panel="clips" hidden>
+        <div class="group">
+          <label class="row-field">Split into parts of about
+            <select id="clipLen"><option value="30">30 s</option><option value="45">45 s</option><option value="60" selected>60 s</option><option value="90">90 s</option></select>
+          </label>
+          <div class="btn-row">
+            <button class="btn small" id="btnSplit" type="button">Split automatically</button>
+            <button class="btn small ghost" id="btnAddClip" type="button">Add at playhead</button>
+          </div>
+          <p class="hint">Drag a clip's edges on the timeline to trim it.</p>
+        </div>
+        <ol class="clip-list" id="clipList"></ol>
+      </div>
+
+      <div class="tabpanel" data-panel="export" hidden>
+        <div class="group">
+          <span class="label">What</span>
+          <div class="ex-what" id="exWhat"></div>
+        </div>
+        <div class="group">
+          <span class="label">Sizes</span>
+          <div class="fmt-list" id="fmtList"></div>
+        </div>
+        <div class="group">
+          <span class="label">Save to</span>
+          <label class="radio"><input type="radio" name="dest" value="folder" id="destFolder" checked> <span>A folder, or your Google Drive folder</span></label>
+          <label class="radio"><input type="radio" name="dest" value="download" id="destDownload"> <span>Downloads</span></label>
+          <p class="hint" id="destHint">With Google Drive for desktop installed, pick a folder inside "Google Drive" and the videos upload automatically.</p>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary" id="btnExport" type="button">Export videos</button>
+          <button class="btn ghost" id="btnCancel" type="button" hidden>Cancel</button>
+        </div>
+        <button class="btn small ghost" id="btnStill" type="button">Save current frame as image</button>
+        <div class="bar" hidden id="exBarWrap"><span id="exBar"></span></div>
+        <p class="hint" id="exportHint"></p>
+        <ul class="downloads" id="downloads"></ul>
+        <p class="error" id="exportError" role="alert" hidden></p>
+      </div>
+    </aside>
+
+    <section class="timeline" aria-label="Timeline">
+      <div class="tl-labels" aria-hidden="true">
+        <span class="tl-l ruler-l"></span>
+        <span class="tl-l">Clips</span>
+        <span class="tl-l">Screens</span>
+        <span class="tl-l">Audio</span>
+      </div>
+      <div class="tl-scroll" id="tlScroll">
+        <canvas id="tl" aria-label="Timeline: click to jump, drag clip edges to trim"></canvas>
+      </div>
+      <div class="tl-zoom">
+        <label for="tlZoom" class="mono">Zoom</label>
+        <input id="tlZoom" type="range" min="1" max="40" value="1" step="1">
+        <button class="btn small ghost" id="tlFit" type="button">Fit</button>
+      </div>
+    </section>
+  </div>
 </div>
 <script type="module" src="js/app.js"></script>
 </body>
