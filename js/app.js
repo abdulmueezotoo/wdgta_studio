@@ -84,6 +84,7 @@ async function setAudio(file) {
   if (audioURL) URL.revokeObjectURL(audioURL);
   audioURL = URL.createObjectURL(file);
   audio.src = audioURL;
+  audio.playbackRate = speed;
   state.audioName = file.name;
   $('dropFile').textContent = file.name;
   show($('dropFile'), true);
@@ -736,6 +737,28 @@ function buildSwatches() {
   }));
 }
 
+const SPEEDS = [0.5, 1, 1.5, 2];
+let speed = 1;
+function buildSpeed() {
+  document.querySelectorAll('[data-speed-group]').forEach((g) => {
+    g.replaceChildren(...SPEEDS.map((v) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = `${v}×`;
+      b.title = `Play at ${v}× speed (preview only; exported videos play at normal speed)`;
+      b.setAttribute('aria-pressed', String(v === speed));
+      b.onclick = () => setSpeed(v);
+      return b;
+    }));
+  });
+}
+function setSpeed(v) {
+  speed = v;
+  audio.defaultPlaybackRate = v;
+  audio.playbackRate = v;
+  audio.preservesPitch = true;
+  buildSpeed();
+}
+
 // ---------------- wiring ----------------
 function bind() {
   const drop = $('drop');
@@ -835,6 +858,10 @@ function bind() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); }
     if (e.code === 'Space' && !typing && !$('workspace').hidden) { e.preventDefault(); togglePlay(); }
+    if (!typing && (e.key === '>' || e.key === '<')) {
+      const i = SPEEDS.indexOf(speed) + (e.key === '>' ? 1 : -1);
+      if (SPEEDS[i]) setSpeed(SPEEDS[i]);
+    }
     if (selEl && !typing && /^Arrow/.test(e.key)) {
       e.preventDefault();
       const cur = resolveLayout(state.fmt, state.settings.layouts)[selEl];
@@ -865,6 +892,7 @@ function offerResume() {
 // boot
 bind();
 buildTabs();
+buildSpeed();
 applySettingsUI();
 loadFonts().then(() => drawPreview());
 offerResume();
@@ -872,4 +900,4 @@ if (!exportSupported()) $('exportHint').textContent = 'Video export needs the la
 if (!window.showDirectoryPicker) $('destHint').textContent = 'This browser can only download files. Chrome or Edge can also save straight into a folder, including your Google Drive folder.';
 
 // test hook (used by automated checks; harmless for users)
-window.__studio = { state, loadState, setAudio, FORMATS, defaultLayout };
+window.__studio = { state, loadState, setAudio, FORMATS, defaultLayout, audio };

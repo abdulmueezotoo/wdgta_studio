@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>WDGTA Studio</title>
 <meta name="description" content="We Dey Go Through Am — turn an episode recording into branded captioned videos for every platform.">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<meta name="theme-color" content="#0E0E0C">
 <link rel="stylesheet" href="css/studio.css">
 </head>
 <body>
@@ -130,6 +134,7 @@
           <div class="fs-bar" id="fsBar">
             <button class="btn small" id="fsPlay" type="button">Play</button>
             <span class="mono time" id="fsTime">0:00</span>
+            <div class="speed" role="group" aria-label="Playback speed" data-speed-group></div>
             <button class="btn small" id="fsExit" type="button">Exit full screen</button>
           </div>
         </div>
@@ -137,6 +142,7 @@
           <button class="btn icon" id="btnPlay" type="button">Play</button>
           <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Position">
           <span class="mono time" id="timeLbl">0:00 / 0:00</span>
+          <div class="speed" role="group" aria-label="Playback speed" data-speed-group></div>
           <button class="btn small ghost" id="btnFull" type="button" title="Full-screen preview">Full screen</button>
         </div>
         <div class="elbar" id="elbar" hidden>
