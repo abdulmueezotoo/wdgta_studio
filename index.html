@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WDGTA Studio</title>
+<meta name="description" content="We Dey Go Through Am — turn an episode recording into branded captioned videos for every platform.">
+<link rel="stylesheet" href="css/studio.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail" aria-label="WDGTA system">
+    <div class="mark">
+      <span class="mark-word">WDGTA</span>
+      <span class="mark-sub">Operating System</span>
+    </div>
+    <nav class="modules">
+      <a class="module is-active" href="#studio" aria-current="page"><span class="mod-no">01</span>Studio<span class="mod-tag">Audio → video</span></a>
+      <span class="module is-later"><span class="mod-no">02</span>Guest pipeline<span class="mod-tag">Later</span></span>
+      <span class="module is-later"><span class="mod-no">03</span>Episode board<span class="mod-tag">Later</span></span>
+      <span class="module is-later"><span class="mod-no">04</span>Content calendar<span class="mod-tag">Later</span></span>
+      <span class="module is-later"><span class="mod-no">05</span>Reality Radar<span class="mod-tag">Later</span></span>
+    </nav>
+    <p class="rail-foot">Beyond the Success Stories.</p>
+  </aside>
+
+  <main class="main" id="studio">
+    <header class="topbar">
+      <div class="title-wrap">
+        <label class="eyebrow" for="projTitle">Episode / clip title</label>
+        <input id="projTitle" class="proj-title" type="text" placeholder="e.g. Mini-Episode · Before You Build" autocomplete="off">
+      </div>
+      <div class="top-actions">
+        <button class="btn ghost" id="btnOpen" type="button">Open project</button>
+        <button class="btn ghost" id="btnSave" type="button" disabled>Save project</button>
+        <button class="btn ghost" id="btnNew" type="button">New</button>
+        <input id="openFile" type="file" accept=".json,application/json" hidden>
+      </div>
+    </header>
+
+    <div class="notice" id="resume" hidden></div>
+
+    <!-- STEP 1: AUDIO -->
+    <section class="step" id="stepAudio" aria-labelledby="h-audio">
+      <div class="step-head">
+        <span class="step-no">Step 1</span>
+        <h1 id="h-audio">Add the recording</h1>
+        <p class="lede">Upload the episode audio. Studio listens to it on this computer, writes down every word with its timing, and turns it into a captioned video. Your audio is never uploaded anywhere.</p>
+      </div>
+
+      <label class="drop" id="drop" for="audioFile">
+        <input id="audioFile" type="file" accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.mp4" hidden>
+        <span class="drop-big">Drop an audio file here</span>
+        <span class="drop-small">or click to choose · MP3, M4A, WAV, AAC or a video file</span>
+        <span class="drop-file" id="dropFile" hidden></span>
+      </label>
+
+      <div class="row-opts">
+        <div class="field">
+          <label for="quality">Transcription quality</label>
+          <select id="quality">
+            <option value="fast">Fast — quick drafts</option>
+            <option value="balanced" selected>Balanced — recommended</option>
+            <option value="accurate">Accurate — slower, best for accents</option>
+          </select>
+        </div>
+        <button class="btn primary" id="btnTranscribe" type="button" disabled>Transcribe</button>
+      </div>
+
+      <div class="job" id="job" hidden>
+        <div class="job-line"><span id="jobText">Preparing…</span><span class="mono" id="jobPct"></span></div>
+        <div class="bar"><span id="jobBar"></span></div>
+        <p class="hint">The first run downloads the speech model (about 80–250 MB depending on quality). After that it is cached in this browser.</p>
+      </div>
+      <p class="error" id="audioError" role="alert" hidden></p>
+    </section>
+
+    <!-- STEP 2 + 3: EDIT, PREVIEW, EXPORT -->
+    <section class="workspace" id="workspace" hidden>
+      <div class="editor-col">
+        <div class="col-head">
+          <span class="step-no">Step 2</span>
+          <h2>Check the words</h2>
+          <p class="hint">Click a word to fix it, highlight it in yellow, or start a new screen from it. Your script is the reference for anything the model misheard.</p>
+        </div>
+
+        <div class="tools">
+          <div class="find">
+            <input id="findText" type="text" placeholder="Find word" aria-label="Find word">
+            <input id="replText" type="text" placeholder="Replace with" aria-label="Replace with">
+            <button class="btn small" id="btnReplace" type="button">Replace all</button>
+          </div>
+          <div class="tools-right">
+            <button class="btn small ghost" id="btnUndo" type="button" disabled>Undo</button>
+            <button class="btn small ghost" id="btnRegroup" type="button" title="Rebuild the screens automatically from the words">Regroup screens</button>
+          </div>
+        </div>
+
+        <div class="wordbar" id="wordbar" hidden>
+          <input id="wordText" type="text" aria-label="Edit word" autocomplete="off">
+          <button class="btn small primary" id="wApply" type="button">Apply</button>
+          <button class="btn small" id="wKey" type="button">Yellow highlight</button>
+          <button class="btn small" id="wSplit" type="button">New screen from here</button>
+          <button class="btn small" id="wJoin" type="button">Join previous screen</button>
+          <button class="btn small danger" id="wDel" type="button">Delete</button>
+          <span class="wordbar-time mono" id="wTime"></span>
+        </div>
+
+        <ol class="cards" id="cards"></ol>
+        <p class="hint stats mono" id="stats"></p>
+      </div>
+
+      <div class="preview-col">
+        <div class="col-head">
+          <span class="step-no">Preview</span>
+          <div class="fmt-tabs" role="tablist" id="fmtTabs"></div>
+        </div>
+        <div class="stage" id="stage"><canvas id="canvas" aria-label="Video preview"></canvas></div>
+        <div class="transport">
+          <button class="btn icon" id="btnPlay" type="button" aria-label="Play">Play</button>
+          <input id="scrub" type="range" min="0" max="1000" value="0" aria-label="Position">
+          <span class="mono time" id="timeLbl">0:00 / 0:00</span>
+        </div>
+        <p class="hint" id="noAudio" hidden>Add the audio file to preview and export: <label class="link" for="audioFile2">choose audio</label><input id="audioFile2" type="file" accept="audio/*,video/*" hidden></p>
+
+        <details class="settings" open>
+          <summary>Look</summary>
+          <div class="set-grid">
+            <label class="check"><input type="checkbox" id="optUpper" checked> Capital letters</label>
+            <label class="check"><input type="checkbox" id="optHandle" checked> Show @wedeygothrougham</label>
+            <label class="check"><input type="checkbox" id="optProgress" checked> Progress line</label>
+            <label class="check"><input type="checkbox" id="optTitle" checked> Show title on video</label>
+            <div class="logo-field">
+              <span>Logo (PNG with transparent background)</span>
+              <div class="logo-row">
+                <label class="btn small" for="logoFile">Choose logo</label>
+                <input id="logoFile" type="file" accept="image/png,image/svg+xml,image/webp" hidden>
+                <button class="btn small ghost" id="btnLogoClear" type="button" hidden>Remove</button>
+                <span class="mono hint" id="logoName">None</span>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <div class="export">
+          <div class="col-head">
+            <span class="step-no">Step 3</span>
+            <h2>Export videos</h2>
+          </div>
+          <div class="fmt-list" id="fmtList"></div>
+          <div class="export-actions">
+            <button class="btn primary" id="btnExport" type="button">Export selected</button>
+            <button class="btn ghost" id="btnCancel" type="button" hidden>Cancel</button>
+          </div>
+          <p class="hint" id="exportHint"></p>
+          <ul class="downloads" id="downloads"></ul>
+          <p class="error" id="exportError" role="alert" hidden></p>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
