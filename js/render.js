@@ -467,8 +467,22 @@ function drawBrand(ctx, fmt, t, style, theme, L, boxes) {
     const bx = p.x * W, by = Math.min(H - bh, p.y * H), bw = Math.min(W - bx, p.w * W);
     ctx.fillStyle = theme.track;
     ctx.fillRect(bx, by, bw, bh);
+    const frac = Math.min(1, Math.max(0, (t - r.start) / dur));
     ctx.fillStyle = theme.fill;
-    ctx.fillRect(bx, by, bw * Math.min(1, Math.max(0, (t - r.start) / dur)), bh);
+    ctx.fillRect(bx, by, bw * frac, bh);
+    // chapter points: a dot on the line where each chapter begins (lit once passed)
+    if (style.chapterMarks !== false && style.chapters && style.chapters.length) {
+      const rad = Math.max(4, bh * 1.35);
+      for (const c of style.chapters) {
+        const f = (c.t - r.start) / dur;
+        if (f <= 0.002 || f >= 0.998) continue;
+        const cx = bx + bw * f, cy = by + bh / 2;
+        ctx.fillStyle = theme.bg;
+        ctx.beginPath(); ctx.arc(cx, cy, rad + Math.max(2, bh * 0.5), 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = f <= frac ? theme.text : theme.meta;
+        ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
+      }
+    }
     boxes.progress = [bx, by - 8, bw, bh + 16];
   }
 }

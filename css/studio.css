@@ -332,3 +332,11 @@ body.is-resizing.col { cursor: col-resize; } body.is-resizing.row { cursor: row-
 .badge-row select { flex: 1 1 auto; }
 .badge-num { width: 70px; flex: 0 0 70px; text-align: center; font-family: var(--mono); }
 #badgeCustom { flex: 1 1 auto; }
+
+/* volume */
+.vol { display: inline-flex; align-items: center; gap: 6px; }
+.vol input[type=range] { width: 84px; }
+.vol-btn .i-mute { display: none; }
+.vol.is-muted .vol-btn .i-vol { display: none; }
+.vol.is-muted .vol-btn .i-mute { display: block; }
+.vol.is-muted input[type=range] { opacity: .45; }

@@ -130,6 +130,13 @@
           <button class="btn small" id="fsPlay" type="button">Play</button>
           <span class="mono time" id="fsTime">0:00</span>
           <div class="speed" role="group" aria-label="Playback speed" data-speed-group></div>
+          <div class="vol" data-vol-group>
+            <button class="icon-btn vol-btn" type="button" data-mute aria-label="Mute">
+              <svg class="i-vol" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+              <svg class="i-mute" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="m17 9 5 6M22 9l-5 6"/></svg>
+            </button>
+            <input type="range" min="0" max="100" value="100" data-vol aria-label="Volume">
+          </div>
           <button class="btn small" id="fsExit" type="button">Exit full screen</button>
         </div>
       </div>
@@ -141,7 +148,14 @@
         <span class="mono time" id="timeLbl">0:00 / 0:00</span>
         <span class="tsep" aria-hidden="true"></span>
         <div class="speed" role="group" aria-label="Playback speed" data-speed-group></div>
-        <button class="btn small ghost" id="btnFull" type="button">Full screen</button>
+        <div class="vol" data-vol-group>
+          <button class="icon-btn vol-btn" type="button" data-mute aria-label="Mute" title="Mute (M)">
+            <svg class="i-vol" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg>
+            <svg class="i-mute" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="m17 9 5 6M22 9l-5 6"/></svg>
+          </button>
+          <input type="range" min="0" max="100" value="100" data-vol aria-label="Volume">
+        </div>
+                <button class="btn small ghost" id="btnFull" type="button">Full screen</button>
       </div>
       <p class="hint" id="noAudio" hidden>Add the audio file to preview and export: <label class="link" for="audioFile2">choose audio</label><input id="audioFile2" type="file" accept="audio/*,video/*" hidden></p>
     </section>
@@ -295,6 +309,7 @@
           <div class="btn-row">
             <button class="btn small ghost" id="chapCopy" type="button">Copy YouTube chapters</button>
           </div>
+          <label class="check"><input type="checkbox" id="optChapMarks" checked> Show chapter points on the video's progress line</label>
           <textarea id="chapOut" class="out" rows="4" readonly hidden aria-label="YouTube chapters"></textarea>
           <p class="hint" id="chapWarn"></p>
         </details>

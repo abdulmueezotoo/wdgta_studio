@@ -95,6 +95,7 @@ function styleObj(extra = {}) {
     showNames: state.settings.showNames,
     bookends: state.settings.bookends,
     badge: badgeText(),
+    chapterMarks: state.settings.chapterMarks !== false,
     ...extra,
   };
 }
@@ -796,6 +797,7 @@ function applySettingsUI() {
   $('optLogo').checked = state.settings.showLogo !== false;
   $('optKeys').value = String(state.settings.maxKeys || 1);
   $('optChapter').checked = !!state.settings.showChapter;
+  $('optChapMarks').checked = state.settings.chapterMarks !== false;
   const bd = state.settings.badge;
   $('optBadge').checked = bd.show !== false; $('badgeKind').value = bd.kind || 'Capsule';
   $('badgeNum').value = bd.num || ''; $('badgeCustom').value = bd.custom || '';
@@ -1391,8 +1393,21 @@ function syncMusic() {
   if (musicEl.paused) { musicEl.currentTime = t % musicBuf.duration; musicEl.play().catch(() => {}); }
   const target = state.settings.music.vol * (isSpeaking(speech, t) ? state.settings.music.duck : 1);
   musicGain += (target - musicGain) * (target < musicGain ? 0.35 : 0.08);
-  musicEl.volume = Math.max(0, Math.min(1, musicGain));
+  musicEl.volume = Math.max(0, Math.min(1, musicGain * (player.muted ? 0 : player.vol)));
 }
+
+// ---------------- player volume (preview only; exports are unaffected) ----------------
+const player = (() => { try { return { vol: 1, muted: false, ...JSON.parse(localStorage.getItem('wdgta-studio:player') || '{}') }; } catch { return { vol: 1, muted: false }; } })();
+function applyVolume(save = true) {
+  audio.volume = player.vol; audio.muted = player.muted;
+  document.querySelectorAll('[data-vol-group]').forEach((g) => {
+    g.classList.toggle('is-muted', player.muted || player.vol === 0);
+    g.querySelector('[data-vol]').value = Math.round(player.vol * 100);
+    const b = g.querySelector('[data-mute]'); b.setAttribute('aria-label', player.muted ? 'Unmute' : 'Mute');
+  });
+  if (save) { try { localStorage.setItem('wdgta-studio:player', JSON.stringify(player)); } catch {} }
+}
+function toggleMute() { if (player.vol === 0) { player.vol = 0.8; player.muted = false; } else player.muted = !player.muted; applyVolume(); }
 
 // ---------------- resizable / hideable panels ----------------
 const LAYOUT_KEY = 'wdgta-studio:layout';
@@ -1641,6 +1656,11 @@ function bind() {
   $('cPrevExit').onclick = exitPreviewMode;
   // export extras
   $('exSubs').onchange = (e) => { state.settings.exportSubs = e.target.checked; persist(); };
+  $('optChapMarks').onchange = (e) => { state.settings.chapterMarks = e.target.checked; persist(); drawPreview(); };
+  document.querySelectorAll('[data-vol-group]').forEach((g) => {
+    g.querySelector('[data-mute]').onclick = toggleMute;
+    g.querySelector('[data-vol]').oninput = (e) => { player.vol = +e.target.value / 100; player.muted = false; applyVolume(); };
+  });
   $('capFull').onclick = () => copyPrompt('a full mini-episode or founder conversation', state.title, 0, totalDur(), $('capOut'), $('capHint'));
   $('insTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-tab]'); if (b) setTab(b.dataset.tab); });
   $('btnExportTop').onclick = () => setTab('export');
@@ -1670,6 +1690,7 @@ function bind() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); }
     if (e.code === 'Space' && !typing && !$('workspace').hidden) { e.preventDefault(); togglePlay(); }
+    if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'm' && !$('workspace').hidden) { e.preventDefault(); toggleMute(); return; }
     if (e.altKey && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) { e.preventDefault(); togglePanel({ Digit1: 'tr', Digit2: 'tl', Digit3: 'ins' }[e.code]); return; }
     if (!typing && !$('workspace').hidden && (e.key === '=' || e.key === '+' || e.key === '-')) {
       e.preventDefault(); setZoom(tlZoomLevel * (e.key === '-' ? 0.8 : 1.25));
@@ -1714,6 +1735,7 @@ function offerResume() {
 bind();
 buildTabs();
 clampSizes(); applyLayout(false);
+applyVolume(false);
 buildChapterPresets();
 renderDict();
 buildSpeed();
