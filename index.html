@@ -250,6 +250,13 @@
         <label for="tlZoom" class="mono">Zoom</label>
         <input id="tlZoom" type="range" min="1" max="40" value="1" step="1">
         <button class="btn small ghost" id="tlFit" type="button">Fit</button>
+        <label for="tlGain" class="mono">Wave</label>
+        <input id="tlGain" type="range" min="50" max="400" value="100" step="10">
+      </div>
+      <span class="tl-l nav-l mono" aria-hidden="true">View</span>
+      <div class="tl-nav" id="tlNav" title="Drag the window to move. Drag its edges to stretch or squeeze the timeline.">
+        <canvas id="tlNavC" aria-hidden="true"></canvas>
+        <div class="tl-win" id="tlWin"><span class="tl-h" data-h="l" aria-label="Stretch from the left"></span><span class="tl-h" data-h="r" aria-label="Stretch from the right"></span></div>
       </div>
     </section>
   </div>

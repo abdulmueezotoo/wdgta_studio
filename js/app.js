@@ -764,7 +764,8 @@ function setTab(name) {
 // ---------------- timeline ----------------
 const tl = $('tl');
 const tlScroll = $('tlScroll');
-let peaks = null, tlStatic = null, tlZoomLevel = 1, tlW = 0, tlDrag = null;
+let peaks = null, tlStatic = null, tlZoomLevel = 1, tlW = 0, tlDrag = null, tlGain = 1;
+const MAX_TL_PX = 30000; // browsers cap canvas size; keep the timeline under it
 const TL = { ruler: [0, 20], clips: [26, 26], screens: [58, 30], audio: [94, 50], h: 150 };
 function computePeaks(buf) {
   const ch = buf.getChannelData(0), n = 4000, step = Math.max(1, Math.floor(ch.length / n));
@@ -778,16 +779,22 @@ function computePeaks(buf) {
   if (max > 0) for (let i = 0; i < n; i++) out[i] /= max;
   peaks = out; tlInvalidate();
 }
+function setGain(g) {
+  tlGain = Math.min(4, Math.max(0.5, g));
+  $('tlGain').value = String(Math.round(tlGain * 100));
+  tlStatic = null; drawTimeline();
+}
 const tX = (t) => (t / Math.max(0.1, totalDur())) * tlW;
 const xT = (x) => Math.min(totalDur(), Math.max(0, x / Math.max(1, tlW) * totalDur()));
 function tlInvalidate() { tlStatic = null; drawTimeline(); }
 function buildTimelineStatic() {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  tlW = Math.max(200, Math.round(tlScroll.clientWidth * tlZoomLevel));
+  tlW = tlWidthFor(tlZoomLevel);
+  const dprW = Math.min(dpr, MAX_TL_PX / tlW);
   tl.style.width = tlW + 'px';
-  tl.width = Math.round(tlW * dpr); tl.height = Math.round(TL.h * dpr);
+  tl.width = Math.round(tlW * dprW); tl.height = Math.round(TL.h * dpr);
   const off = document.createElement('canvas'); off.width = tl.width; off.height = tl.height;
-  const c = off.getContext('2d'); c.scale(dpr, dpr);
+  const c = off.getContext('2d'); c.scale(dprW, dpr);
   const dur = totalDur();
   // ruler
   const pps = tlW / Math.max(1, dur);
@@ -832,7 +839,7 @@ function buildTimelineStatic() {
     const stride = Math.max(1, Math.floor(n / tlW));
     for (let i = 0; i < n; i += stride) {
       let m = 0; for (let j = i; j < i + stride && j < n; j++) m = Math.max(m, peaks[j]);
-      const hh = Math.max(1, m * ah * 0.95);
+      const hh = Math.max(1, Math.min(ah, m * ah * 0.95 * tlGain));
       c.fillRect(i / n * tlW, mid - hh / 2, Math.max(1, bw * stride - (bw * stride > 2 ? 1 : 0)), hh);
     }
   } else { c.fillRect(0, mid, tlW, 1); }
@@ -840,12 +847,12 @@ function buildTimelineStatic() {
 }
 function drawTimeline(follow = false) {
   if ($('workspace').hidden || !state.cards.length) return;
-  if (!tlStatic || Math.abs(tlW - Math.max(200, Math.round(tlScroll.clientWidth * tlZoomLevel))) > 2) buildTimelineStatic();
-  const dpr = tl.width / tlW;
+  if (!tlStatic || Math.abs(tlW - tlWidthFor(tlZoomLevel)) > 2) buildTimelineStatic();
+  const sx = tl.width / tlW, sy = tl.height / TL.h;
   const c = tl.getContext('2d');
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.drawImage(tlStatic, 0, 0);
-  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.setTransform(sx, 0, 0, sy, 0, 0);
   const t = audio.currentTime || 0;
   const ci = cardAt(state.cards, t);
   if (ci >= 0) {
@@ -860,6 +867,7 @@ function drawTimeline(follow = false) {
     const L = tlScroll.scrollLeft, W = tlScroll.clientWidth;
     if (px < L || px > L + W - 30) tlScroll.scrollLeft = px - 40;
   }
+  updateNav();
 }
 function tlHit(x, y) {
   if (y >= TL.clips[0] && y <= TL.clips[0] + TL.clips[1]) {
@@ -912,16 +920,88 @@ function tlEnd() {
 }
 tl.addEventListener('pointerup', tlEnd);
 tl.addEventListener('pointercancel', tlEnd);
-function setZoom(z, anchorT = audio.currentTime || 0) {
-  tlZoomLevel = Math.min(40, Math.max(1, z));
+function maxZoom() { return Math.max(1, Math.min(40, MAX_TL_PX / Math.max(1, tlScroll.clientWidth))); }
+function tlWidthFor(z) { return Math.max(200, Math.round(tlScroll.clientWidth * Math.min(z, maxZoom()))); }
+function setZoom(z, anchorT = audio.currentTime || 0, anchorX = null) {
+  tlZoomLevel = Math.min(maxZoom(), Math.max(1, z));
   $('tlZoom').value = String(Math.round(tlZoomLevel));
   tlStatic = null; drawTimeline();
-  tlScroll.scrollLeft = tX(anchorT) - tlScroll.clientWidth / 2;
+  tlScroll.scrollLeft = tX(anchorT) - (anchorX ?? tlScroll.clientWidth / 2);
+  updateNav();
 }
-tlScroll.addEventListener('wheel', (e) => {
-  if (!(e.ctrlKey || e.metaKey)) return;
+
+// navigator: a mini map of the whole recording; the window shows what the timeline is showing
+const navC = $('tlNavC'), navWin = $('tlWin'), nav = $('tlNav');
+let navPeaksDrawn = null, navDrag = null;
+function drawNav() {
+  const r = nav.getBoundingClientRect();
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  navC.width = Math.max(1, Math.round(r.width * dpr)); navC.height = Math.max(1, Math.round(r.height * dpr));
+  const c = navC.getContext('2d'); c.scale(dpr, dpr);
+  c.clearRect(0, 0, r.width, r.height);
+  c.fillStyle = '#3A3833';
+  const mid = r.height / 2;
+  if (peaks) {
+    const n = peaks.length, per = n / Math.max(1, r.width);
+    for (let x = 0; x < r.width; x++) {
+      let m = 0; for (let j = Math.floor(x * per); j < Math.floor((x + 1) * per) && j < n; j++) m = Math.max(m, peaks[j]);
+      const h = Math.max(1, m * (r.height - 6));
+      c.fillRect(x, mid - h / 2, 1, h);
+    }
+  }
+  navPeaksDrawn = peaks;
+}
+function updateNav() {
+  if (!tlW) return;
+  if (navPeaksDrawn !== peaks || navC.width < 2) drawNav();
+  const f0 = tlScroll.scrollLeft / tlW, fw = Math.min(1, tlScroll.clientWidth / tlW);
+  navWin.style.left = `${f0 * 100}%`;
+  navWin.style.width = `${fw * 100}%`;
+}
+nav.addEventListener('pointerdown', (e) => {
+  const r = nav.getBoundingClientRect();
+  const handle = e.target.closest('.tl-h')?.dataset.h || null;
+  const f0 = tlScroll.scrollLeft / tlW, fw = Math.min(1, tlScroll.clientWidth / tlW);
+  if (!handle && !e.target.closest('.tl-win')) {
+    // click outside the window: centre the view there
+    const fc = (e.clientX - r.left) / r.width;
+    tlScroll.scrollLeft = (fc - fw / 2) * tlW; updateNav();
+  }
+  navDrag = { handle, x0: e.clientX, f0: tlScroll.scrollLeft / tlW, fw, w: r.width };
+  nav.setPointerCapture(e.pointerId);
   e.preventDefault();
-  setZoom(tlZoomLevel * (e.deltaY < 0 ? 1.15 : 0.87), xT(e.offsetX));
+});
+nav.addEventListener('pointermove', (e) => {
+  if (!navDrag) return;
+  const d = (e.clientX - navDrag.x0) / navDrag.w;
+  if (!navDrag.handle) { tlScroll.scrollLeft = (navDrag.f0 + d) * tlW; updateNav(); return; }
+  // stretch/squeeze: move one edge, keep the other fixed
+  let left = navDrag.f0, right = navDrag.f0 + navDrag.fw;
+  if (navDrag.handle === 'l') left = Math.min(right - 0.01, Math.max(0, left + d));
+  else right = Math.max(left + 0.01, Math.min(1, right + d));
+  const span = Math.max(1 / maxZoom(), right - left);
+  const dur = totalDur();
+  tlZoomLevel = Math.min(maxZoom(), Math.max(1, 1 / span));
+  $('tlZoom').value = String(Math.round(tlZoomLevel));
+  tlStatic = null; drawTimeline();
+  const anchor = navDrag.handle === 'l' ? right - span : left;
+  tlScroll.scrollLeft = tX(anchor * dur);
+  updateNav();
+});
+nav.addEventListener('pointerup', () => { navDrag = null; });
+nav.addEventListener('pointercancel', () => { navDrag = null; });
+tlScroll.addEventListener('scroll', updateNav);
+new ResizeObserver(() => { navPeaksDrawn = null; updateNav(); }).observe(nav);
+tlScroll.addEventListener('wheel', (e) => {
+  if (e.altKey) { // Alt + wheel: taller/shorter waveform
+    e.preventDefault();
+    setGain(tlGain * (e.deltaY < 0 ? 1.12 : 0.89));
+    return;
+  }
+  if (!(e.ctrlKey || e.metaKey)) return; // Ctrl/⌘ + wheel or trackpad pinch: stretch/squeeze
+  e.preventDefault();
+  const anchorX = e.offsetX - tlScroll.scrollLeft;
+  setZoom(tlZoomLevel * (e.deltaY < 0 ? 1.15 : 0.87), xT(e.offsetX), anchorX);
 }, { passive: false });
 new ResizeObserver(() => { tlStatic = null; drawTimeline(); }).observe(tlScroll);
 
@@ -1041,6 +1121,7 @@ function bind() {
   $('btnFwd').onclick = () => seekTo((audio.currentTime || 0) + 5);
   $('tlZoom').oninput = (e) => setZoom(+e.target.value);
   $('tlFit').onclick = () => setZoom(1);
+  $('tlGain').oninput = (e) => setGain(+e.target.value / 100);
   document.querySelectorAll('.layer-name').forEach((b) => b.onclick = () => { selEl = b.dataset.el; updateElbar(); drawPreview(); });
   const applyXY = () => {
     if (!selEl) return;
@@ -1061,6 +1142,9 @@ function bind() {
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); }
     if (e.code === 'Space' && !typing && !$('workspace').hidden) { e.preventDefault(); togglePlay(); }
+    if (!typing && !$('workspace').hidden && (e.key === '=' || e.key === '+' || e.key === '-')) {
+      e.preventDefault(); setZoom(tlZoomLevel * (e.key === '-' ? 0.8 : 1.25));
+    }
     if (!typing && (e.key === '>' || e.key === '<')) {
       const i = SPEEDS.indexOf(speed) + (e.key === '>' ? 1 : -1);
       if (SPEEDS[i]) setSpeed(SPEEDS[i]);
