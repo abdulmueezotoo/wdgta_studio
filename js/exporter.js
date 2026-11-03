@@ -56,9 +56,12 @@ async function pickAudioConfig(sampleRate, channels) {
  *   onProgress(fraction), signal (AbortSignal)
  * @returns {Promise<{blob?: Blob, audioCodec: string}>}
  */
-export async function renderMp4({ cards, style, fmt, audioBuffer, writable = null, onProgress = () => {}, signal }) {
+export async function renderMp4({ cards, style, fmt, audioBuffer, start = 0, end = null, writable = null, onProgress = () => {}, signal }) {
   const W = fmt.w, H = fmt.h;
-  const duration = audioBuffer.duration;
+  start = Math.max(0, start);
+  end = Math.min(audioBuffer.duration, end ?? audioBuffer.duration);
+  const duration = Math.max(0.1, end - start);
+  style = { ...style, range: { start, end } };
   const channels = Math.min(2, audioBuffer.numberOfChannels);
   const { cfg: vCfg, muxCodec: vCodec } = await pickVideoConfig(W, H);
   const { cfg: aCfg, muxCodec } = await pickAudioConfig(audioBuffer.sampleRate, channels);
@@ -86,14 +89,15 @@ export async function renderMp4({ cards, style, fmt, audioBuffer, writable = nul
   for (let ch = 0; ch < channels; ch++) planes.push(audioBuffer.getChannelData(ch));
   const sr = audioBuffer.sampleRate, totalSamples = audioBuffer.length;
   const BLOCK = 4096;
-  let aPos = 0;
+  const s0 = Math.floor(start * sr), sEnd = Math.min(totalSamples, Math.ceil(end * sr));
+  let aPos = s0;
   function feedAudioUntil(sec) {
-    const until = Math.min(totalSamples, Math.ceil(sec * sr));
+    const until = Math.min(sEnd, s0 + Math.ceil(sec * sr));
     while (aPos < until) {
-      const n = Math.min(BLOCK, totalSamples - aPos);
+      const n = Math.min(BLOCK, until - aPos);
       const data = new Float32Array(n * channels);
       for (let ch = 0; ch < channels; ch++) data.set(planes[ch].subarray(aPos, aPos + n), ch * n);
-      const ad = new AudioData({ format: 'f32-planar', sampleRate: sr, numberOfFrames: n, numberOfChannels: channels, timestamp: Math.round(aPos / sr * 1e6), data });
+      const ad = new AudioData({ format: 'f32-planar', sampleRate: sr, numberOfFrames: n, numberOfChannels: channels, timestamp: Math.round((aPos - s0) / sr * 1e6), data });
       aenc.encode(ad);
       ad.close();
       aPos += n;
@@ -106,9 +110,9 @@ export async function renderMp4({ cards, style, fmt, audioBuffer, writable = nul
   for (let i = 0; i < nFrames; i++) {
     if (signal?.aborted) throw new DOMException('Export cancelled', 'AbortError');
     if (failure) throw failure;
-    const t = i / FPS;
-    feedAudioUntil(t + 1);
-    drawFrame(ctx, cards, t, fmt, style, duration);
+    const t = start + i / FPS;
+    feedAudioUntil(i / FPS + 1);
+    drawFrame(ctx, cards, t, fmt, style);
     const frame = new VideoFrame(canvas, { timestamp: Math.round(i * frameDur), duration: Math.round(frameDur) });
     venc.encode(frame, { keyFrame: i % (FPS * 2) === 0 });
     frame.close();
@@ -131,4 +135,13 @@ export async function renderMp4({ cards, style, fmt, audioBuffer, writable = nul
 
   if (writable) { await writable.close(); return { audioCodec: muxCodec, videoCodec: vCodec }; }
   return { blob: new Blob([target.buffer], { type: 'video/mp4' }), audioCodec: muxCodec, videoCodec: vCodec };
+}
+
+/** Render a single frame as a PNG (for quote cards, carousel slides, thumbnails). */
+export async function renderStill({ cards, style, fmt, t, range }) {
+  const canvas = new OffscreenCanvas(fmt.w, fmt.h);
+  const ctx = canvas.getContext('2d', { alpha: false });
+  // draw "settled" text: a moment after the screen's last word so every word is lit
+  drawFrame(ctx, cards, t, fmt, { ...style, range });
+  return canvas.convertToBlob({ type: 'image/png' });
 }

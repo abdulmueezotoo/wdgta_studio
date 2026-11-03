@@ -7,8 +7,11 @@ Part of the **We Dey Go Through Am** operating system. Module 01: turn an episod
 1. **Add the recording.** Upload the audio (MP3, M4A, WAV, AAC, or a video file).
 2. **Transcribe.** Studio runs OpenAI's open-source Whisper speech model *inside your browser*. The audio is never uploaded anywhere. The model downloads once (about 80–250 MB depending on the quality setting) and is cached after that.
 3. **Check the words.** Click any word to fix it, highlight it in WDGTA yellow, start a new screen from it, or join screens. Find & replace fixes repeated mistakes (names, Pidgin, brand terms) in one go. Undo with Ctrl/Cmd+Z.
-4. **Preview** in every format while the audio plays.
-5. **Export** MP4s in one go:
+4. **Preview** in every format while the audio plays, or press **Full screen**.
+5. **Arrange the design.** Drag the words, logo, title, handle or progress line anywhere on the preview. Select one to resize it (size slider, mouse wheel, or arrow keys to nudge; Shift+arrow for bigger steps). Positions are saved separately for each size.
+6. **Yellow words.** Choose 1–3 yellow words per screen, or click any word and press **Make yellow**.
+7. **Cut it into clips.** Split the recording automatically into ~30/45/60/90-second parts (cut at natural pauses), or add a clip at the play position and adjust its start and end. Each clip can have its own on-screen title.
+8. **Export** the full recording and/or any clips, in any sizes, in one go. Save into a folder (pick a folder inside Google Drive for desktop to send them straight to Drive) or to Downloads. **Save this frame as image** makes a PNG for quote cards, carousel slides or thumbnails.
 
 | Format | Size | Use |
 |---|---|---|
@@ -16,6 +19,8 @@ Part of the **We Dey Go Through Am** operating system. Module 01: turn an episod
 | 4:5 | 1080×1350 | Instagram & Facebook feed, LinkedIn |
 | 1:1 | 1080×1080 | Instagram, Facebook, LinkedIn |
 | 16:9 | 1920×1080 | YouTube, Facebook, LinkedIn |
+
+The official white WDGTA logo is built in (`assets/wdgta-logo-white.png`); you can swap in another logo under Look.
 
 Projects auto-save in the browser, and **Save project** downloads a `.wdgta.json` file you can open on another computer (add the audio file again there).
 
