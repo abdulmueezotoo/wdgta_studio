@@ -16,7 +16,7 @@ const state = {
   settings: {
     upper: true, handle: true, progress: true, showTitle: true, showLogo: true,
     logo: null,          // custom logo data URL; null = official logo
-    maxKeys: 2,
+    maxKeys: 1,
     layouts: {},         // per-format element position overrides
   },
   audioName: '',
@@ -683,7 +683,7 @@ function applySettingsUI() {
   $('optProgress').checked = state.settings.progress;
   $('optTitle').checked = state.settings.showTitle;
   $('optLogo').checked = state.settings.showLogo !== false;
-  $('optKeys').value = String(state.settings.maxKeys || 2);
+  $('optKeys').value = String(state.settings.maxKeys || 1);
   $(state.dest === 'download' ? 'destDownload' : 'destFolder').checked = true;
   setLogo(state.settings.logo);
 }
