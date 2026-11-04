@@ -362,3 +362,8 @@ body.is-resizing.col { cursor: col-resize; } body.is-resizing.row { cursor: row-
 .keys dd { margin: 0; color: var(--soft); }
 kbd { font: 500 11px var(--mono); background: var(--raise); border: 1px solid var(--line-2); border-bottom-width: 2px; border-radius: 4px; padding: 2px 6px; color: var(--text); }
 .pack { border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* projects folder */
+.folder-box { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; background: var(--deep); margin-bottom: 10px; }
+.folder-status { margin: 0; font-size: 13px; color: var(--text); }
+.notice.reconnect { margin: 0; }

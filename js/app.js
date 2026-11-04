@@ -4,7 +4,10 @@ import {
   loadFonts, resolveLayout, defaultLayout, suggestClips, drawBookend,
 } from './render.js';
 import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter.js';
-import { saveProject as libSave, listProjects, getProject, deleteProject, putFile, getFile, deleteFile, storageEstimate } from './library.js';
+import {
+  saveProject as libSave, listProjects, getProject, deleteProject, putFile, getFile, deleteFile, storageEstimate,
+  folderSupported, getDirHandle, setDirHandle, dirPermission, saveToFolder, scanFolder, persistStorage,
+} from './library.js';
 import {
   DEFAULT_DICTIONARY, applyDictionary, subtitleCues, toSRT, toVTT, CHAPTER_PRESETS, youtubeChapters,
   assignSpeakers, findHighlights, captionPrompt, speechRanges, isSpeaking, SLIDE_TYPES, SERIES, drawSlide,
@@ -119,9 +122,22 @@ function persist() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
   if (state.id && state.cards.length) {
     clearTimeout(libTimer);
-    libTimer = setTimeout(() => libSave(state).catch((e) => console.warn('[Studio] library save failed', e)), 700);
+    libTimer = setTimeout(flushSave, 700);
   }
 }
+/** Save now: to this browser's library and, if connected, to the projects folder. */
+async function flushSave(extra = {}) {
+  clearTimeout(libTimer); libTimer = null;
+  if (!state.id || !state.cards.length) return;
+  try { await libSave(state); } catch (e) { console.warn('[Studio] library save failed', e); }
+  if (dirHandle && folderPerm === 'granted') {
+    try { await saveToFolder(dirHandle, state, extra); setFolderStatus(); }
+    catch (e) { console.warn('[Studio] folder save failed', e); folderPerm = await dirPermission(dirHandle); setFolderStatus(`Could not save to the folder (${e.message || e}).`); }
+  }
+}
+// make sure the last edits are written when the window closes or is hidden
+window.addEventListener('pagehide', () => { if (libTimer) flushSave(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && libTimer) flushSave(); });
 function ensureId() { if (!state.id) state.id = 'p' + Date.now().toString(36) + uid(); return state.id; }
 function changed() {
   assignSpeakers(state.cards);
@@ -133,7 +149,10 @@ function changed() {
 // ---------------- audio loading ----------------
 async function setAudio(file, { store = true } = {}) {
   audioFile = file;
-  if (store && state.id) putFile(`${state.id}:audio`, file).catch(() => notice('This browser could not keep a copy of the recording; you may need to add it again next time.'));
+  if (store && state.id) {
+    putFile(`${state.id}:audio`, file).catch(() => notice('This browser could not keep a copy of the recording; you may need to add it again next time.'));
+    if (state.cards.length) flushSave({ audio: file });
+  }
   audioBuf48 = null;
   if (audioURL) URL.revokeObjectURL(audioURL);
   audioURL = URL.createObjectURL(file);
@@ -214,6 +233,7 @@ async function transcribe() {
       state.id = null; ensureId();
       if (audioFile) putFile(`${state.id}:audio`, audioFile).catch(() => {});
       if (musicBuf && $('musicFile').files[0]) putFile(`${state.id}:music`, $('musicFile').files[0]).catch(() => {});
+      setTimeout(() => flushSave({ audio: audioFile }), 0);
       if (fixed.count) notice(`Dictionary fixed ${fixed.count} word${fixed.count > 1 ? 's' : ''} automatically.`);
       enterWorkspace();
     }
@@ -1407,7 +1427,7 @@ async function saveText(dir, name, text, type) {
 
 // ---------------- music bed ----------------
 async function setMusic(file, { store = true } = {}) {
-  if (store && state.id) putFile(`${state.id}:music`, file).catch(() => {});
+  if (store && state.id) { putFile(`${state.id}:music`, file).catch(() => {}); if (state.cards.length) setTimeout(() => flushSave({ music: file }), 0); }
   try {
     musicBuf = await decodeAll(file, 48000);
   } catch { notice('That music file could not be read. Try an MP3 or WAV.'); return; }
@@ -1532,6 +1552,89 @@ function bindSplitter(el, kind) {
   });
 }
 
+// ---------------- projects folder (backup on disk / Google Drive) ----------------
+let dirHandle = null, folderPerm = 'none';
+function setFolderStatus(msg) {
+  const st = $('folderStatus'), btn = $('folderBtn'), stop = $('folderStop');
+  if (!folderSupported()) { st.textContent = 'This browser cannot save to a folder. Use Chrome or Edge on a computer.'; btn.hidden = true; stop.hidden = true; return; }
+  if (!dirHandle) { st.textContent = 'Not set up. Projects are only kept inside this browser.'; btn.textContent = 'Choose projects folder'; stop.hidden = true; }
+  else if (folderPerm === 'granted') { st.textContent = `Saving every project to "${dirHandle.name}".`; btn.textContent = 'Change folder'; stop.hidden = false; }
+  else { st.textContent = `"${dirHandle.name}" needs your permission again.`; btn.textContent = 'Reconnect folder'; stop.hidden = false; }
+  if (msg) st.textContent = msg;
+  const need = dirHandle && folderPerm !== 'granted';
+  show($('reconnectBox'), !!need);
+  if (need) $('reconnectName').textContent = dirHandle.name;
+}
+async function chooseFolder() {
+  if (!folderSupported()) return;
+  if (dirHandle && folderPerm !== 'granted') {
+    folderPerm = await dirPermission(dirHandle, true);
+    setFolderStatus();
+    if (folderPerm === 'granted') { await flushSave({ audio: audioFile }); renderProjects(); renderRecent(); }
+    return;
+  }
+  try {
+    const h = await window.showDirectoryPicker({ id: 'wdgta-projects', mode: 'readwrite' });
+    dirHandle = h; await setDirHandle(h);
+    folderPerm = await dirPermission(h, true);
+    setFolderStatus();
+    if (state.id) await flushSave({ audio: audioFile, music: musicBuf ? $('musicFile').files[0] || null : null });
+    // also copy every project already in this browser into the folder
+    await backupAllToFolder();
+    renderProjects(); renderRecent();
+  } catch (e) { if (e.name !== 'AbortError') setFolderStatus(`Could not use that folder: ${e.message || e}`); }
+}
+async function backupAllToFolder() {
+  if (!dirHandle || folderPerm !== 'granted') return;
+  let n = 0;
+  for (const p of await listProjects()) {
+    if (p.id === state.id) continue;
+    const data = await getProject(p.id);
+    if (!data) continue;
+    const [a, m] = await Promise.all([getFile(`${p.id}:audio`).catch(() => null), getFile(`${p.id}:music`).catch(() => null)]);
+    try { await saveToFolder(dirHandle, data, { audio: a, music: m }); n++; } catch {}
+  }
+  if (n) notice(`Copied ${n} project${n > 1 ? 's' : ''} into "${dirHandle.name}".`);
+}
+async function stopFolder() {
+  dirHandle = null; folderPerm = 'none'; await setDirHandle(null); setFolderStatus();
+}
+async function folderOnlyProjects(knownIds) {
+  if (!dirHandle || folderPerm !== 'granted') return [];
+  try { return (await scanFolder(dirHandle)).filter((p) => !knownIds.has(p.id)); } catch { return []; }
+}
+async function importFromFolder(fp) {
+  if ($('projDialog').open) $('projDialog').close();
+  audio.pause();
+  audioFile = null; audioBuf48 = null; sel = null; selEl = null; previewMode = null;
+  if (audioURL) { URL.revokeObjectURL(audioURL); audioURL = null; }
+  audio.removeAttribute('src');
+  clearMusicLocal();
+  loadState(fp.data);
+  if (fp.audioHandle) {
+    const f = await fp.audioHandle.getFile();
+    await setAudio(new File([f], fp.origAudioName || f.name, { type: f.type }), { store: true });
+  } else notice(`Add the recording (${fp.origAudioName || 'audio file'}) to preview and export.`);
+  if (fp.musicHandle) {
+    const f = await fp.musicHandle.getFile();
+    await setMusic(new File([f], fp.origMusicName || f.name, { type: f.type }), { store: true });
+  }
+  await flushSave();
+  renderRecent();
+}
+function folderRow(fp) {
+  const li = document.createElement('li');
+  const t = document.createElement('span'); t.className = 'pl-title'; t.textContent = fp.title;
+  const m = document.createElement('span'); m.className = 'proj-meta mono';
+  m.textContent = `In your folder · ${fp.audioHandle ? 'recording saved' : 'no recording'} · ${fp.savedAt ? new Date(fp.savedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : ''}`;
+  const a = document.createElement('div'); a.className = 'proj-actions';
+  const open = document.createElement('button'); open.type = 'button'; open.className = 'btn small'; open.textContent = 'Open';
+  open.onclick = () => importFromFolder(fp);
+  a.appendChild(open);
+  li.append(t, m, a);
+  return li;
+}
+
 // ---------------- keyboard editing at the playhead ----------------
 function wordAtPlayhead() {
   const t = audio.currentTime || 0;
@@ -1594,7 +1697,10 @@ function projRow(p, { compact = false } = {}) {
 async function renderProjects() {
   let list = [];
   try { list = await listProjects(); } catch { $('projList').innerHTML = '<li class="clip-empty">This browser cannot store projects.</li>'; return; }
-  $('projList').replaceChildren(...(list.length ? list.map((p) => projRow(p)) : [Object.assign(document.createElement('li'), { className: 'clip-empty', textContent: 'No projects yet. Transcribe a recording to start one.' })]));
+  const extra = await folderOnlyProjects(new Set(list.map((p) => p.id)));
+  const rows = [...list.map((p) => projRow(p)), ...extra.map(folderRow)];
+  $('projList').replaceChildren(...(rows.length ? rows : [Object.assign(document.createElement('li'), { className: 'clip-empty', textContent: 'No projects yet. Transcribe a recording to start one.' })]));
+  setFolderStatus();
   const est = await storageEstimate();
   const sz = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
   $('projStorage').textContent = est && est.quota ? `Using ${sz(est.usage || 0)} of about ${sz(est.quota)} this browser allows for Studio.` : '';
@@ -1602,8 +1708,9 @@ async function renderProjects() {
 async function renderRecent() {
   let list = [];
   try { list = await listProjects(); } catch { show($('recentBox'), false); return; }
-  show($('recentBox'), list.length > 0);
-  $('recentList').replaceChildren(...list.slice(0, 5).map((p) => projRow(p, { compact: true })));
+  const extra = await folderOnlyProjects(new Set(list.map((p) => p.id)));
+  show($('recentBox'), list.length + extra.length > 0);
+  $('recentList').replaceChildren(...list.slice(0, 5).map((p) => projRow(p, { compact: true })), ...extra.slice(0, 5).map(folderRow));
   if (list.length) show($('resume'), false);
 }
 async function openProject(id) {
@@ -1798,6 +1905,9 @@ function bind() {
   $('optAnim').onchange = (e) => { state.settings.anim = e.target.value; persist(); drawPreview(); };
   $('btnSafe').onclick = () => { ui.safe = !ui.safe; applyLayout(); drawPreview(); };
   $('btnProjects').onclick = () => { renderProjects(); $('projDialog').showModal(); };
+  $('folderBtn').onclick = chooseFolder;
+  $('folderStop').onclick = stopFolder;
+  $('reconnectBtn').onclick = chooseFolder;
   $('btnKeys').onclick = () => $('keysDialog').showModal();
   document.querySelectorAll('dialog [data-close]').forEach((b) => b.onclick = () => b.closest('dialog').close());
   document.querySelectorAll('dialog').forEach((d) => d.addEventListener('click', (e) => { if (e.target === d) d.close(); }));
@@ -1896,9 +2006,18 @@ renderDict();
 buildSpeed();
 applySettingsUI();
 loadFonts().then(() => drawPreview());
-renderRecent().then(() => { if ($('recentBox').hidden) offerResume(); });
+(async () => {
+  persistStorage();
+  try { dirHandle = await getDirHandle(); folderPerm = await dirPermission(dirHandle); } catch { dirHandle = null; }
+  setFolderStatus();
+  await renderRecent();
+  if ($('recentBox').hidden) offerResume();
+})();
 if (!exportSupported()) $('exportHint').textContent = 'Video export needs the latest Chrome or Edge on a laptop or desktop.';
 if (!window.showDirectoryPicker) $('destHint').textContent = 'This browser can only download files. Chrome or Edge can also save straight into a folder, including your Google Drive folder.';
 
 // test hook (used by automated checks; harmless for users)
-window.__studio = { state, loadState, setAudio, FORMATS, defaultLayout, audio };
+window.__studio = {
+  state, loadState, setAudio, FORMATS, defaultLayout, audio,
+  _useFolder: async (h) => { dirHandle = h; await setDirHandle(h); folderPerm = await dirPermission(h, true); setFolderStatus(); await flushSave({ audio: audioFile }); },
+};

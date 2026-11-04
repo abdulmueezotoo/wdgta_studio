@@ -9,6 +9,7 @@
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <meta name="theme-color" content="#0B0B0A">
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="stylesheet" href="css/studio.css">
 </head>
 <body>
@@ -72,6 +73,10 @@
       </div>
       <p class="error" id="audioError" role="alert" hidden></p>
       <p class="hint">Or <button class="linkbtn" id="btnOpen2" type="button">open a project file</button>.</p>
+      <div class="notice reconnect" id="reconnectBox" hidden>
+        <span>Your projects folder "<b id="reconnectName"></b>" needs permission again.</span>
+        <button class="btn small primary" id="reconnectBtn" type="button">Reconnect</button>
+      </div>
       <div class="recent" id="recentBox" hidden>
         <h2>Recent projects</h2>
         <ol class="proj-list" id="recentList"></ol>
@@ -442,7 +447,16 @@
 </div>
 <dialog class="dlg" id="projDialog" aria-labelledby="projDlgTitle">
   <div class="dlg-head"><h2 id="projDlgTitle">Projects</h2><button class="x-btn" type="button" data-close aria-label="Close">×</button></div>
-  <p class="hint">Saved in this browser on this computer, with their recordings and music. Use "Save" to keep a copy as a file.</p>
+  <div class="folder-box">
+    <span class="label">Projects folder (recommended)</span>
+    <p class="hint">Also save every project, with its recording and music, into a folder on your computer. Pick a folder inside Google Drive and they are backed up and available on your other computers too.</p>
+    <p class="folder-status" id="folderStatus"></p>
+    <div class="btn-row">
+      <button class="btn small primary" id="folderBtn" type="button">Choose projects folder</button>
+      <button class="btn small ghost" id="folderStop" type="button" hidden>Stop saving to folder</button>
+    </div>
+  </div>
+  <p class="hint">Kept in this browser on this computer, with their recordings and music.</p>
   <ol class="proj-list" id="projList"></ol>
   <p class="hint mono" id="projStorage"></p>
 </dialog>
