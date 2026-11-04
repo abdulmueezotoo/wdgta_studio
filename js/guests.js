@@ -395,6 +395,14 @@ export function bumpGuest(id, stage) {
   save(); if (bound) renderAll();
   return true;
 }
+/** Change fields of a guest from another module (e.g. a date dragged on the Calendar). */
+export function updateGuest(id, patch) {
+  const g = guests.find((x) => x.id === id);
+  if (!g) return false;
+  Object.assign(g, patch, { updatedAt: Date.now() });
+  save(); if (bound) renderAll();
+  return true;
+}
 export async function focusGuest(id) { if (guests.some((g) => g.id === id)) await select(id); }
 export async function refreshGuests() { renderAll(); await renderDetail(); }
 export function flushGuests() { if (saveTimer) return flush(); }

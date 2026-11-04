@@ -21,7 +21,7 @@
       <a class="module is-active" href="#studio" aria-current="page">Studio</a>
       <a class="module" href="#guests">Guests</a>
       <a class="module" href="#episodes">Episodes</a>
-      <span class="module is-later" title="Coming later">Calendar</span>
+      <a class="module" href="#calendar">Calendar</a>
       <span class="module is-later" title="Coming later">Reality Radar</span>
     </nav>
     <input id="projTitle" class="proj-title studio-only" type="text" placeholder="Untitled project" aria-label="Project title (also shown on the video)" autocomplete="off">
@@ -498,6 +498,32 @@
         <div class="g-list" id="ePlan" hidden></div>
       </div>
       <aside class="g-detail" id="eDetail" aria-label="Episode details" hidden></aside>
+    </div>
+  </main>
+
+  <!-- MODULE 04: Calendar -->
+  <main class="guests module-view" id="calendarView" aria-labelledby="h-calendar">
+    <div class="g-toolbar">
+      <h1 id="h-calendar">Calendar</h1>
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-cview="month" aria-pressed="true">Month</button>
+        <button type="button" data-cview="agenda" aria-pressed="false">Agenda</button>
+      </div>
+      <div class="cal-nav">
+        <button class="btn small ghost" id="calPrev" type="button" aria-label="Previous">‹</button>
+        <button class="btn small ghost" id="calToday" type="button">Today</button>
+        <button class="btn small ghost" id="calNext" type="button" aria-label="Next">›</button>
+        <h2 class="cal-title" id="calTitle" aria-live="polite"></h2>
+      </div>
+      <button class="btn ghost cal-ics" id="calIcs" type="button" title="Download an .ics file to import into Google Calendar or Apple Calendar">Export to Google Calendar</button>
+    </div>
+    <div class="cal-filters" id="calFilters" role="group" aria-label="Show or hide"></div>
+    <div class="g-body">
+      <div class="g-main">
+        <div class="cal-month" id="calMonth"></div>
+        <div class="g-list" id="calAgenda" hidden></div>
+      </div>
+      <aside class="g-detail" id="calDetail" aria-label="Entry details" hidden></aside>
     </div>
   </main>
 </div>

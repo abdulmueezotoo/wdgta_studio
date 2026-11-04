@@ -76,6 +76,24 @@ Open **Episodes** in the top bar (or go to `#episodes`). It tracks every founder
 - **Flags.** An episode is flagged when its release date has passed, or when it releases within a week and isn't ready.
 - **Storage.** Kept in this browser, and saved as `wdgta-episodes.json` in the projects folder when one is connected.
 
+## Calendar (module 04)
+
+Open **Calendar** in the top bar (or go to `#calendar`). It shows every date from Guests and Episodes on one calendar:
+
+- discovery sessions, recordings and next actions from Guests
+- recordings, releases and Capsules from Episodes
+- every Capsule Sunday from 1 Nov to 27 Dec
+- the locked milestones: 13 Dec readiness check, 3 Jan Episode 1, 10 Jan launch session
+- **My entries** you add yourself: social posts, meetings, tasks and events
+
+- **Month and Agenda views.** The agenda covers six weeks and lists anything overdue at the top. On a phone, tap a day to see its agenda.
+- **Filter chips** show or hide each kind of item.
+- **Click** an item to open its guest or episode. Click an empty day (or **+**) to add your own entry, a recording or a Capsule.
+- **Drag** an item to another day. The date changes in Guests or Episodes as well. Milestones can't be moved.
+- **Warnings** in marker orange: overdue next actions, and releases that have passed or aren't ready a week out.
+- **Export to Google Calendar** downloads an `.ics` file. Import it into a separate "WDGTA" calendar, then clear that calendar and re-import when dates change.
+- **Keys:** ← / → change the month and T goes to today.
+
 ## Requirements
 
 - **Chrome or Edge (latest), on a laptop or desktop.** Video export uses the browser's built-in encoders (WebCodecs). Safari and Firefox are not supported for export.

@@ -28,7 +28,7 @@ const CHECKS = [
 const GUEST_STAGE = { recorded: 'recorded', editing: 'editing', review: 'editing', ready: 'ready', scheduled: 'ready', published: 'published' };
 
 // Locked plan (Source of Truth, 25 Oct 2026)
-const MILESTONES = [
+export const MILESTONES = [
   { date: '2026-12-13', label: 'Readiness check: at least 4 edited founder episodes' },
   { date: '2027-01-03', label: 'Episode 1 release' },
   { date: '2027-01-10', label: 'Virtual launch session' },
@@ -289,6 +289,29 @@ export async function planEpisodeFor(guestId, c) {
   const g = guests.find((x) => x.id === guestId);
   add('Episode', { guestId, stage: g && ['recorded', 'editing', 'ready', 'published'].includes(g.stage) ? 'recorded' : 'planned', recordingDate: g?.recordingDate || '' });
 }
+// ---------------- for Calendar ----------------
+export { label as episodeLabel, fullTitle as episodeTitle, warnings as episodeWarnings, sundays, CAPSULE_FROM, CAPSULE_TO };
+export async function episodesData(c = {}) {
+  ctx = { ...ctx, ...c };
+  guests = await guestsData({ getDir: ctx.getDir, notice: ctx.notice });
+  if (!loaded) { await load(); loaded = true; }
+  return eps;
+}
+/** Change dates or fields of an episode from another module. */
+export function updateEpisode(id, patch) {
+  const e = eps.find((x) => x.id === id);
+  if (!e) return false;
+  Object.assign(e, patch, { updatedAt: Date.now() });
+  save(); if (bound) renderAll();
+  return true;
+}
+/** Create an episode without opening it (Calendar then opens it on the Episodes tab). */
+export function createEpisode(type, extra = {}) {
+  const e = blank(type, extra);
+  eps.push(e); save();
+  return e;
+}
+export async function focusEpisode(id) { if (eps.some((e) => e.id === id)) { await select(id); setTimeout(() => document.querySelector('#eDetail .gd-name')?.focus(), 30); } }
 export function flushEpisodes() { if (saveTimer) return flush(); }
 function bind() {
   bound = true;

@@ -5,7 +5,8 @@ import {
 } from './render.js';
 import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter.js';
 import { initGuests, refreshGuests, flushGuests, focusGuest } from './guests.js';
-import { initEpisodes, planEpisodeFor, flushEpisodes } from './episodes.js';
+import { initEpisodes, planEpisodeFor, flushEpisodes, focusEpisode } from './episodes.js';
+import { initCalendar, flushCalendar } from './calendar.js';
 import {
   saveProject as libSave, listProjects, getProject, deleteProject, putFile, getFile, deleteFile, storageEstimate,
   folderSupported, getDirHandle, setDirHandle, dirPermission, saveToFolder, scanFolder, persistStorage,
@@ -2002,14 +2003,15 @@ function offerResume() {
 // ---------------- modules (Studio, Guests, …) ----------------
 let currentModule = 'studio';
 let guestsReady = false;
-const MODULES = ['studio', 'guests', 'episodes'];
-let pendingGuest = null, pendingEpisodeFor = null;
+const MODULES = ['studio', 'guests', 'episodes', 'calendar'];
+let pendingGuest = null, pendingEpisodeFor = null, pendingEpisode = null;
 async function route() {
   const m = (location.hash.replace('#', '') || 'studio').toLowerCase();
   const next = MODULES.includes(m) ? m : 'studio';
   if (currentModule === 'studio' && next !== 'studio') { audio.pause(); flushSave(); }
   if (currentModule === 'guests' && next !== 'guests') flushGuests();
   if (currentModule === 'episodes' && next !== 'episodes') flushEpisodes();
+  if (currentModule === 'calendar' && next !== 'calendar') flushCalendar();
   currentModule = next;
   document.body.dataset.module = next;
   document.title = next === 'studio' ? 'WDGTA Studio' : `${next[0].toUpperCase()}${next.slice(1)} · WDGTA`;
@@ -2025,6 +2027,7 @@ async function route() {
     openStudioProject: (id) => { location.hash = '#studio'; openProject(id); },
     openGuest: (id) => { pendingGuest = id; location.hash = '#guests'; },
     planEpisode: (id) => { pendingEpisodeFor = id; location.hash = '#episodes'; },
+    openEpisode: (id) => { pendingEpisode = id; location.hash = '#episodes'; },
   };
   if (next === 'guests') {
     if (!guestsReady) { guestsReady = true; await initGuests(ctx); } else await refreshGuests();
@@ -2032,6 +2035,9 @@ async function route() {
   } else if (next === 'episodes') {
     await initEpisodes(ctx);
     if (pendingEpisodeFor) { const id = pendingEpisodeFor; pendingEpisodeFor = null; await planEpisodeFor(id, ctx); }
+    if (pendingEpisode) { const id = pendingEpisode; pendingEpisode = null; await focusEpisode(id); }
+  } else if (next === 'calendar') {
+    await initCalendar(ctx);
   } else if (!$('workspace').hidden) requestAnimationFrame(() => { drawPreview(); tlInvalidate(); });
 }
 window.addEventListener('hashchange', route);
