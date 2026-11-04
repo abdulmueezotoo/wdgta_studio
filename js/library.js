@@ -141,3 +141,21 @@ export async function persistStorage() {
     return !!(await navigator.storage?.persist?.());
   } catch { return false; }
 }
+
+// ---------------- small records for other modules (Guests, Episodes, …) ----------------
+export async function getRecord(name) {
+  const v = await tx('files', 'readonly', (s) => req2p(s.get(`__rec:${name}`)));
+  return v ? v.value : null;
+}
+export async function putRecord(name, value) {
+  await tx('files', 'readwrite', (s) => s.put({ value: JSON.parse(JSON.stringify(value)), savedAt: Date.now() }, `__rec:${name}`));
+}
+export async function folderReadJSON(dir, name) {
+  if ((await dirPermission(dir)) !== 'granted') return null;
+  try { return JSON.parse(await (await (await dir.getFileHandle(name)).getFile()).text()); } catch { return null; }
+}
+export async function folderWriteJSON(dir, name, data) {
+  if ((await dirPermission(dir)) !== 'granted') return false;
+  await writeFile(dir, name, JSON.stringify(data, null, 2));
+  return true;
+}

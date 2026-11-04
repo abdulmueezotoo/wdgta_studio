@@ -4,6 +4,7 @@ import {
   loadFonts, resolveLayout, defaultLayout, suggestClips, drawBookend,
 } from './render.js';
 import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter.js';
+import { initGuests, refreshGuests, flushGuests } from './guests.js';
 import {
   saveProject as libSave, listProjects, getProject, deleteProject, putFile, getFile, deleteFile, storageEstimate,
   folderSupported, getDirHandle, setDirHandle, dirPermission, saveToFolder, scanFolder, persistStorage,
@@ -1942,6 +1943,7 @@ function bind() {
   $('btnCancel').onclick = () => exportAbort?.abort();
 
   document.addEventListener('keydown', (e) => {
+    if (currentModule !== 'studio') return;
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); }
     if (e.code === 'Space' && !typing && !$('workspace').hidden) { e.preventDefault(); togglePlay(); }
@@ -1996,6 +1998,35 @@ function offerResume() {
   n.append(span, b); show(n, true);
 }
 
+// ---------------- modules (Studio, Guests, …) ----------------
+let currentModule = 'studio';
+let guestsReady = false;
+const MODULES = ['studio', 'guests'];
+async function route() {
+  const m = (location.hash.replace('#', '') || 'studio').toLowerCase();
+  const next = MODULES.includes(m) ? m : 'studio';
+  if (currentModule === 'studio' && next !== 'studio') { audio.pause(); flushSave(); }
+  if (currentModule === 'guests' && next !== 'guests') flushGuests();
+  currentModule = next;
+  document.body.dataset.module = next;
+  document.title = next === 'studio' ? 'WDGTA Studio' : `${next[0].toUpperCase()}${next.slice(1)} · WDGTA`;
+  document.querySelectorAll('.modules a.module').forEach((a) => {
+    const on = a.getAttribute('href') === `#${next}`;
+    a.classList.toggle('is-active', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
+  if (next === 'guests') {
+    const ctx = {
+      getDir: () => (dirHandle && folderPerm === 'granted' ? dirHandle : null),
+      notice,
+      listStudioProjects: () => listProjects().catch(() => []),
+      openStudioProject: (id) => { location.hash = '#studio'; openProject(id); },
+    };
+    if (!guestsReady) { guestsReady = true; await initGuests(ctx); } else await refreshGuests();
+  } else if (!$('workspace').hidden) requestAnimationFrame(() => { drawPreview(); tlInvalidate(); });
+}
+window.addEventListener('hashchange', route);
+
 // boot
 bind();
 buildTabs();
@@ -2010,8 +2041,9 @@ loadFonts().then(() => drawPreview());
   persistStorage();
   try { dirHandle = await getDirHandle(); folderPerm = await dirPermission(dirHandle); } catch { dirHandle = null; }
   setFolderStatus();
+  await route();
   await renderRecent();
-  if ($('recentBox').hidden) offerResume();
+  if ($('recentBox').hidden && currentModule === 'studio') offerResume();
 })();
 if (!exportSupported()) $('exportHint').textContent = 'Video export needs the latest Chrome or Edge on a laptop or desktop.';
 if (!window.showDirectoryPicker) $('destHint').textContent = 'This browser can only download files. Chrome or Edge can also save straight into a folder, including your Google Drive folder.';

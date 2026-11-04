@@ -48,6 +48,17 @@ Projects auto-save in the browser, and **Save project** downloads a `.wdgta.json
 - **Safe zones**: shows where TikTok, Reels and Shorts put their buttons on 9:16 (preview only).
 - **Word animation**: fade-in karaoke, pop, slide up or typewriter.
 
+## Guests (module 02)
+
+Open **Guests** in the top bar (or go to `#guests`). It tracks every founder from first contact to a published episode.
+
+- **Board and list views.** Stages: Prospect, Contacted, Discovery, Booked, Recorded, Editing, Ready, Published and On hold. Drag a card to change its stage.
+- **Detail panel.** Contact details, episode angle, discovery notes, recording date, consent / photo / bio checks, and a link to the guest's Studio project. It saves as you type.
+- **Bank counters.** Recorded toward the 5–6 November–December recordings, and edited toward the 4 needed by the 13 Dec readiness check.
+- **Next actions.** Each guest has a next action with a date; ones due soon show in yellow, and overdue ones in marker orange.
+- **Export CSV** for a spreadsheet copy.
+- **Storage.** Guests are kept in this browser. When a projects folder is connected (Studio → Projects), they are also saved as `wdgta-guests.json` in that folder and restored from it if the browser is cleared.
+
 ## Requirements
 
 - **Chrome or Edge (latest), on a laptop or desktop.** Video export uses the browser's built-in encoders (WebCodecs). Safari and Firefox are not supported for export.
