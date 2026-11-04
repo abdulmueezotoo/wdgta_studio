@@ -1,9 +1,10 @@
 // WDGTA Studio — app controller (upload → transcribe → edit → preview → clips → export).
 import {
-  FORMATS, ELEMENTS, THEMES, buildCards, autoKeys, normalizeCard, drawFrame, cardAt, cardStart, cardEnd,
+  FORMATS, ELEMENTS, THEMES, buildCards, autoKeys, normalizeCard, drawFrame, drawSafeZones, cardAt, cardStart, cardEnd,
   loadFonts, resolveLayout, defaultLayout, suggestClips, drawBookend,
 } from './render.js';
 import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter.js';
+import { saveProject as libSave, listProjects, getProject, deleteProject, putFile, getFile, deleteFile, storageEstimate } from './library.js';
 import {
   DEFAULT_DICTIONARY, applyDictionary, subtitleCues, toSRT, toVTT, CHAPTER_PRESETS, youtubeChapters,
   assignSpeakers, findHighlights, captionPrompt, speechRanges, isSpeaking, SLIDE_TYPES, SERIES, drawSlide,
@@ -15,6 +16,7 @@ const OFFICIAL_LOGO = 'assets/wdgta-logo-white.png';
 const OFFICIAL_LOGO_DARK = 'assets/wdgta-logo-black.png';
 
 const state = {
+  id: null,             // project id in this browser's library
   title: '',
   cards: [],            // [{words:[{w,s,e,edited?}], keys:[i]}]
   clips: [],            // [{id, name, start, end, title}]
@@ -34,6 +36,8 @@ const state = {
     bookends: { introOn: false, introSec: 3, kicker: '', headline: '', sub: '', outroOn: false, outroSec: 4, outroHeadline: '', outroSub: '' },
     music: { vol: 0.25, duck: 0.3, name: '' },
     exportSubs: true,
+    exportLevel: true,
+    anim: 'fade',
   },
   audioName: '',
   duration: 0,
@@ -96,6 +100,7 @@ function styleObj(extra = {}) {
     bookends: state.settings.bookends,
     badge: badgeText(),
     chapterMarks: state.settings.chapterMarks !== false,
+    anim: state.settings.anim || 'fade',
     ...extra,
   };
 }
@@ -109,9 +114,15 @@ function snapshot() {
   if (undoStack.length > 60) undoStack.shift();
   $('btnUndo').disabled = false;
 }
+let libTimer = null;
 function persist() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
+  if (state.id && state.cards.length) {
+    clearTimeout(libTimer);
+    libTimer = setTimeout(() => libSave(state).catch((e) => console.warn('[Studio] library save failed', e)), 700);
+  }
 }
+function ensureId() { if (!state.id) state.id = 'p' + Date.now().toString(36) + uid(); return state.id; }
 function changed() {
   assignSpeakers(state.cards);
   speech = speechRanges(state.cards);
@@ -120,8 +131,9 @@ function changed() {
 }
 
 // ---------------- audio loading ----------------
-async function setAudio(file) {
+async function setAudio(file, { store = true } = {}) {
   audioFile = file;
+  if (store && state.id) putFile(`${state.id}:audio`, file).catch(() => notice('This browser could not keep a copy of the recording; you may need to add it again next time.'));
   audioBuf48 = null;
   if (audioURL) URL.revokeObjectURL(audioURL);
   audioURL = URL.createObjectURL(file);
@@ -199,6 +211,9 @@ async function transcribe() {
       const fixed = applyDictionary(m.words, dict);
       state.cards = buildCards(fixed.words, { keys: state.settings.maxKeys });
       state.clips = []; state.chapters = []; state.slides = [];
+      state.id = null; ensureId();
+      if (audioFile) putFile(`${state.id}:audio`, audioFile).catch(() => {});
+      if (musicBuf && $('musicFile').files[0]) putFile(`${state.id}:music`, $('musicFile').files[0]).catch(() => {});
       if (fixed.count) notice(`Dictionary fixed ${fixed.count} word${fixed.count > 1 ? 's' : ''} automatically.`);
       enterWorkspace();
     }
@@ -402,6 +417,7 @@ function drawPreview() {
   const f = FORMATS[state.fmt];
   ctx.setTransform(pScale, 0, 0, pScale, 0, 0);
   lastBoxes = drawFrame(ctx, state.cards, audio.currentTime || 0, f, previewStyle());
+  if (ui.safe && !isFull()) drawSafeZones(ctx, f);
   if (selEl && lastBoxes[selEl] && !isFull()) {
     const [x, y, w, h] = lastBoxes[selEl];
     const pad = 10;
@@ -665,23 +681,27 @@ async function pickFolder() {
   if (!window.showDirectoryPicker) { $('exportHint').textContent = 'This browser cannot save into a folder, so files will download instead.'; return null; }
   return window.showDirectoryPicker({ id: 'wdgta-exports', mode: 'readwrite' });
 }
-async function doExport() {
+async function doExport(preset = null) {
   errorBox($('exportError'), '');
   if (!audioFile) { errorBox($('exportError'), 'Add the audio file first (under the preview).'); return; }
   if (!exportSupported()) { errorBox($('exportError'), 'This browser cannot make videos. Use the latest Chrome or Edge on a laptop or desktop.'); return; }
+  const weekly = preset === 'weekly';
   const fmts = Object.values(FORMATS).filter((f) => state.exportFmts[f.id]);
   const base = slug(state.title || state.audioName.replace(/\.[^.]+$/, ''));
   const jobs = [];
   const targets = [];
-  if (state.exportWhat.full) targets.push({ key: 'full', start: 0, end: totalDur(), title: state.title });
-  for (const c of state.clips) if (state.exportWhat[c.id]) targets.push({ key: slug(c.name || 'clip'), start: c.start, end: c.end, title: c.title || state.title });
-  for (const tg of targets) for (const f of fmts) jobs.push({ tg, f });
+  const full = { key: 'full', start: 0, end: totalDur(), title: state.title, fmts: weekly ? [FORMATS['16x9']] : fmts };
+  if (weekly || state.exportWhat.full) targets.push(full);
+  for (const c of state.clips) if (weekly || state.exportWhat[c.id]) targets.push({ key: slug(c.name || 'clip'), start: c.start, end: c.end, title: c.title || state.title, fmts: weekly ? [FORMATS['9x16']] : fmts });
+  for (const tg of targets) for (const f of tg.fmts) jobs.push({ tg, f });
   if (!jobs.length) { errorBox($('exportError'), 'Tick at least one item under "What" and one size.'); return; }
+  const doSubs = weekly || state.settings.exportSubs;
+  const doSlides = weekly && state.slides.length > 0;
 
   let dir = null;
   try { dir = await pickFolder(); } catch (e) { if (e.name === 'AbortError') return; }
   audio.pause();
-  $('btnExport').disabled = true; $('btnStill').disabled = true; show($('btnCancel'), true); show($('exBarWrap'), true);
+  $('btnExport').disabled = true; $('btnPack').disabled = true; $('btnStill').disabled = true; show($('btnCancel'), true); show($('exBarWrap'), true);
   exportAbort = new AbortController();
   $('downloads').replaceChildren();
   const t0 = performance.now();
@@ -700,7 +720,7 @@ async function doExport() {
       const intro = bk.introOn ? +bk.introSec || 3 : 0, outro = bk.outroOn ? +bk.outroSec || 4 : 0;
       const res = await renderMp4({
         cards: state.cards, style: styleObj({ title: state.settings.showTitle ? tg.title : '', bookends: { ...bk, headline: bk.headline || (tg.key === 'full' ? '' : tg.title) } }), fmt: f, audioBuffer: buf,
-        start: tg.start, end: tg.end, intro, outro, speech,
+        start: tg.start, end: tg.end, intro, outro, speech, level: state.settings.exportLevel !== false ? -14 : null,
         music: musicBuf ? { buffer: musicBuf, vol: state.settings.music.vol, duck: state.settings.music.duck } : null,
         writable, signal: exportAbort.signal,
         onProgress: (p) => {
@@ -713,7 +733,18 @@ async function doExport() {
       if (res.blob) triggerDownload(res.blob, name);
       if (res.audioCodec === 'opus' || res.videoCodec === 'vp9') compat = true;
     }
-    if (state.settings.exportSubs) {
+    if (doSlides) {
+      $('exportHint').textContent = 'Saving carousel slides…';
+      let pointNo = 0; state.slides.forEach((sl) => { if (sl.type === 'point') sl.num = ++pointNo; });
+      const sbase = slug((state.series || 'carousel') + ' ' + (state.title || ''));
+      for (let i = 0; i < state.slides.length; i++) {
+        const blob = await renderSlide(state.slides[i], i, state.slides.length, deck());
+        const name = `${sbase}_${String(i + 1).padStart(2, '0')}.png`;
+        if (dir) { const w = await (await dir.getFileHandle(name, { create: true })).createWritable(); await w.write(blob); await w.close(); }
+        else triggerDownload(blob, name);
+      }
+    }
+    if (doSubs) {
       const bk = state.settings.bookends;
       const intro = bk.introOn ? +bk.introSec || 3 : 0;
       for (const tg of targets) {
@@ -724,13 +755,15 @@ async function doExport() {
       }
     }
     const secs = (performance.now() - t0) / 1000;
-    $('exportHint').textContent = (dir ? `Saved ${jobs.length} video${jobs.length > 1 ? 's' : ''} to the folder you chose in ${fmtTime(secs)}.` : `Made ${jobs.length} video${jobs.length > 1 ? 's' : ''} in ${fmtTime(secs)}. Check your Downloads folder.`) +
+    const extras = [doSlides ? `${state.slides.length} slide${state.slides.length > 1 ? 's' : ''}` : '', doSubs ? 'subtitles' : ''].filter(Boolean).join(' and ');
+    $('exportHint').textContent = (dir ? `Saved ${jobs.length} video${jobs.length > 1 ? 's' : ''}${extras ? ' plus ' + extras : ''} to the folder you chose in ${fmtTime(secs)}.` : `Made ${jobs.length} video${jobs.length > 1 ? 's' : ''}${extras ? ' plus ' + extras : ''} in ${fmtTime(secs)}. Check your Downloads folder.`) +
+      (weekly && !state.slides.length ? ' (No carousel slides yet, so none were included.)' : '') +
       (compat ? ' This browser could not use the standard H.264/AAC formats, so some apps may reject these files. For best results export from Chrome or Edge on Windows or Mac.' : '');
   } catch (e) {
     if (e.name === 'AbortError') $('exportHint').textContent = 'Export cancelled.';
     else { console.error(e); errorBox($('exportError'), `Export failed: ${e.message || e}`); $('exportHint').textContent = ''; }
   } finally {
-    $('btnExport').disabled = false; $('btnStill').disabled = false; show($('btnCancel'), false); show($('exBarWrap'), false); exportAbort = null;
+    $('btnExport').disabled = false; $('btnPack').disabled = false; $('btnStill').disabled = false; show($('btnCancel'), false); show($('exBarWrap'), false); exportAbort = null;
   }
 }
 async function saveStill() {
@@ -763,6 +796,7 @@ function saveProject() {
 }
 function loadState(data) {
   if (!data || !Array.isArray(data.cards)) throw new Error('Not a WDGTA Studio project file.');
+  state.id = data.id || null; ensureId();
   state.title = data.title || '';
   state.cards = data.cards.map(normalizeCard);
   state.clips = Array.isArray(data.clips) ? data.clips : [];
@@ -796,6 +830,8 @@ function applySettingsUI() {
   $('optTitle').checked = state.settings.showTitle;
   $('optLogo').checked = state.settings.showLogo !== false;
   $('optKeys').value = String(state.settings.maxKeys || 1);
+  $('optAnim').value = state.settings.anim || 'fade';
+  $('exLevel').checked = state.settings.exportLevel !== false;
   $('optChapter').checked = !!state.settings.showChapter;
   $('optChapMarks').checked = state.settings.chapterMarks !== false;
   const bd = state.settings.badge;
@@ -830,7 +866,9 @@ function setLogo(dataUrl) {
 function newProject() {
   audio.pause();
   state.title = ''; state.cards = []; state.clips = []; state.chapters = []; state.slides = []; state.audioName = ''; state.duration = 0;
-  previewMode = null; highlights = [];
+  previewMode = null; highlights = []; state.id = null;
+  if (musicBuf) clearMusicLocal();
+  renderRecent();
   state.exportWhat = { full: true };
   audioFile = null; audioBuf48 = null; sel = null; selEl = null; undoStack = [];
   if (audioURL) URL.revokeObjectURL(audioURL); audioURL = null; audio.removeAttribute('src');
@@ -1368,7 +1406,8 @@ async function saveText(dir, name, text, type) {
 }
 
 // ---------------- music bed ----------------
-async function setMusic(file) {
+async function setMusic(file, { store = true } = {}) {
+  if (store && state.id) putFile(`${state.id}:music`, file).catch(() => {});
   try {
     musicBuf = await decodeAll(file, 48000);
   } catch { notice('That music file could not be read. Try an MP3 or WAV.'); return; }
@@ -1381,6 +1420,7 @@ async function setMusic(file) {
   persist();
 }
 function clearMusic() {
+  if (state.id) deleteFile(`${state.id}:music`).catch(() => {});
   musicBuf = null; musicEl.pause(); musicEl.removeAttribute('src');
   if (musicURL) URL.revokeObjectURL(musicURL); musicURL = null;
   state.settings.music.name = '';
@@ -1411,7 +1451,7 @@ function toggleMute() { if (player.vol === 0) { player.vol = 0.8; player.muted =
 
 // ---------------- resizable / hideable panels ----------------
 const LAYOUT_KEY = 'wdgta-studio:layout';
-const LAYOUT_DEFAULT = { tr: 340, ins: 320, tl: 150, hide: { tr: false, ins: false, tl: false } };
+const LAYOUT_DEFAULT = { tr: 340, ins: 320, tl: 150, safe: false, hide: { tr: false, ins: false, tl: false } };
 let ui = (() => {
   try { const d = JSON.parse(localStorage.getItem(LAYOUT_KEY) || 'null'); if (d) return { ...LAYOUT_DEFAULT, ...d, hide: { ...LAYOUT_DEFAULT.hide, ...(d.hide || {}) } }; } catch {}
   return structuredClone(LAYOUT_DEFAULT);
@@ -1425,6 +1465,7 @@ function applyLayout(save = true) {
   suite.style.setProperty('--tl-canvas', `${ui.tl}px`);
   suite.style.setProperty('--tl-audio', `${ui.tl - 100}px`);
   TL.h = ui.tl; TL.audio[1] = ui.tl - 100;
+  $('btnSafe').setAttribute('aria-pressed', String(!!ui.safe));
   for (const k of ['tr', 'ins', 'tl']) {
     suite.classList.toggle(`no-${k}`, !!ui.hide[k]);
     document.querySelectorAll(`[data-panel-toggle="${k}"]`).forEach((b) => b.setAttribute('aria-pressed', String(!ui.hide[k])));
@@ -1489,6 +1530,102 @@ function bindSplitter(el, kind) {
     if (kind === 'b') ui.tl -= d;
     clampSizes(); applyLayout();
   });
+}
+
+// ---------------- keyboard editing at the playhead ----------------
+function wordAtPlayhead() {
+  const t = audio.currentTime || 0;
+  const ci = cardAt(state.cards, t);
+  if (ci < 0) return null;
+  const ws = state.cards[ci].words;
+  let wi = 0;
+  for (let i = 0; i < ws.length; i++) if (ws[i].s <= t + 0.02) wi = i;
+  return { ci, wi, t };
+}
+function splitAtPlayhead() {
+  const p = wordAtPlayhead();
+  if (!p) return;
+  const ws = state.cards[p.ci].words;
+  // the new screen starts with the first word that begins at or after the playhead
+  const wi = ws.findIndex((w) => w.s >= p.t - 0.05);
+  if (wi < 0) { notice('The playhead is after the last word of this screen.', 2500); return; }
+  if (wi === 0) { notice('A screen already starts here.', 2500); return; }
+  sel = { c: p.ci, w: wi };
+  splitHere();
+  notice(`New screen starts at "${state.cards[p.ci + 1].words[0].w}".`, 2500);
+}
+function yellowAtPlayhead() {
+  const p = wordAtPlayhead();
+  if (!p) return;
+  sel = { c: p.ci, w: p.wi };
+  toggleKey();
+  const on = state.cards[p.ci].keys.includes(p.wi);
+  notice(`"${state.cards[p.ci].words[p.wi].w}" ${on ? 'is now yellow' : 'is no longer yellow'}.`, 2000);
+}
+
+// ---------------- project library ----------------
+function projMeta(p) {
+  const d = new Date(p.updatedAt);
+  const when = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return `${fmtTime(p.duration)} · ${p.screens} screens${p.clips ? ` · ${p.clips} clips` : ''} · ${p.hasAudio ? 'recording saved' : 'no recording'} · ${when}`;
+}
+function projRow(p, { compact = false } = {}) {
+  const li = document.createElement('li');
+  if (p.id === state.id) li.classList.add('is-current');
+  const t = document.createElement('span'); t.className = 'pl-title'; t.textContent = p.title;
+  const m = document.createElement('span'); m.className = 'proj-meta mono'; m.textContent = projMeta(p);
+  const a = document.createElement('div'); a.className = 'proj-actions';
+  const open = document.createElement('button'); open.type = 'button'; open.className = 'btn small'; open.textContent = p.id === state.id ? 'Open (current)' : 'Open';
+  open.onclick = () => openProject(p.id);
+  a.appendChild(open);
+  if (!compact) {
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'btn small ghost danger'; del.textContent = 'Delete';
+    del.onclick = async () => {
+      if (del.dataset.confirm !== '1') { del.dataset.confirm = '1'; del.textContent = 'Confirm delete'; setTimeout(() => { del.dataset.confirm = ''; del.textContent = 'Delete'; }, 3000); return; }
+      await deleteProject(p.id);
+      if (p.id === state.id) state.id = null;
+      renderProjects(); renderRecent();
+    };
+    a.appendChild(del);
+  }
+  li.append(t, m, a);
+  return li;
+}
+async function renderProjects() {
+  let list = [];
+  try { list = await listProjects(); } catch { $('projList').innerHTML = '<li class="clip-empty">This browser cannot store projects.</li>'; return; }
+  $('projList').replaceChildren(...(list.length ? list.map((p) => projRow(p)) : [Object.assign(document.createElement('li'), { className: 'clip-empty', textContent: 'No projects yet. Transcribe a recording to start one.' })]));
+  const est = await storageEstimate();
+  const sz = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(1, Math.round(b / 1e6))} MB`);
+  $('projStorage').textContent = est && est.quota ? `Using ${sz(est.usage || 0)} of about ${sz(est.quota)} this browser allows for Studio.` : '';
+}
+async function renderRecent() {
+  let list = [];
+  try { list = await listProjects(); } catch { show($('recentBox'), false); return; }
+  show($('recentBox'), list.length > 0);
+  $('recentList').replaceChildren(...list.slice(0, 5).map((p) => projRow(p, { compact: true })));
+  if (list.length) show($('resume'), false);
+}
+async function openProject(id) {
+  const data = await getProject(id);
+  if (!data) { notice('That project could not be found.'); return; }
+  if ($('projDialog').open) $('projDialog').close();
+  audio.pause();
+  audioFile = null; audioBuf48 = null; sel = null; selEl = null; previewMode = null;
+  if (audioURL) { URL.revokeObjectURL(audioURL); audioURL = null; }
+  audio.removeAttribute('src');
+  clearMusicLocal();
+  loadState(data);
+  const [rec, mus] = await Promise.all([getFile(`${id}:audio`).catch(() => null), getFile(`${id}:music`).catch(() => null)]);
+  if (rec) await setAudio(rec, { store: false });
+  else notice(`Add the recording (${data.audioName || 'audio file'}) to preview and export.`);
+  if (mus) await setMusic(mus, { store: false });
+}
+function clearMusicLocal() {
+  musicBuf = null; musicEl.pause(); musicEl.removeAttribute('src');
+  if (musicURL) URL.revokeObjectURL(musicURL); musicURL = null;
+  state.settings.music.name = '';
+  $('musicName').textContent = 'No music'; show($('musicClear'), false);
 }
 
 const SPEEDS = [0.5, 1, 1.5, 2];
@@ -1656,6 +1793,14 @@ function bind() {
   $('cPrevExit').onclick = exitPreviewMode;
   // export extras
   $('exSubs').onchange = (e) => { state.settings.exportSubs = e.target.checked; persist(); };
+  $('exLevel').onchange = (e) => { state.settings.exportLevel = e.target.checked; persist(); };
+  $('btnPack').onclick = () => doExport('weekly');
+  $('optAnim').onchange = (e) => { state.settings.anim = e.target.value; persist(); drawPreview(); };
+  $('btnSafe').onclick = () => { ui.safe = !ui.safe; applyLayout(); drawPreview(); };
+  $('btnProjects').onclick = () => { renderProjects(); $('projDialog').showModal(); };
+  $('btnKeys').onclick = () => $('keysDialog').showModal();
+  document.querySelectorAll('dialog [data-close]').forEach((b) => b.onclick = () => b.closest('dialog').close());
+  document.querySelectorAll('dialog').forEach((d) => d.addEventListener('click', (e) => { if (e.target === d) d.close(); }));
   $('optChapMarks').onchange = (e) => { state.settings.chapterMarks = e.target.checked; persist(); drawPreview(); };
   document.querySelectorAll('[data-vol-group]').forEach((g) => {
     g.querySelector('[data-mute]').onclick = toggleMute;
@@ -1682,7 +1827,7 @@ function bind() {
 
   $('destFolder').onchange = () => { state.dest = 'folder'; persist(); };
   $('destDownload').onchange = () => { state.dest = 'download'; persist(); };
-  $('btnExport').onclick = doExport;
+  $('btnExport').onclick = () => doExport();
   $('btnStill').onclick = saveStill;
   $('btnCancel').onclick = () => exportAbort?.abort();
 
@@ -1699,6 +1844,16 @@ function bind() {
       const i = SPEEDS.indexOf(speed) + (e.key === '>' ? 1 : -1);
       if (SPEEDS[i]) setSpeed(SPEEDS[i]);
     }
+    if (!typing && !$('workspace').hidden && !selEl && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        seekTo((audio.currentTime || 0) + (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1 : 5));
+        return;
+      }
+      if (e.key.toLowerCase() === 's') { e.preventDefault(); splitAtPlayhead(); return; }
+      if (e.key.toLowerCase() === 'y') { e.preventDefault(); yellowAtPlayhead(); return; }
+    }
+    if (!typing && e.key === '?') { e.preventDefault(); $('keysDialog').showModal(); return; }
     if (selEl && !typing && /^Arrow/.test(e.key)) {
       e.preventDefault();
       const cur = resolveLayout(state.fmt, state.settings.layouts)[selEl];
@@ -1741,7 +1896,7 @@ renderDict();
 buildSpeed();
 applySettingsUI();
 loadFonts().then(() => drawPreview());
-offerResume();
+renderRecent().then(() => { if ($('recentBox').hidden) offerResume(); });
 if (!exportSupported()) $('exportHint').textContent = 'Video export needs the latest Chrome or Edge on a laptop or desktop.';
 if (!window.showDirectoryPicker) $('destHint').textContent = 'This browser can only download files. Chrome or Edge can also save straight into a folder, including your Google Drive folder.';
 

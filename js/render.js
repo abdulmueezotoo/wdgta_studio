@@ -524,21 +524,47 @@ export function drawFrame(ctx, cards, t, fmt, style = {}) {
         ctx.font = `900 ${ln.size}px ${HEAD_FONT}`;
         for (const it of ln.items) {
           const wd = card.words[it.i];
-          const k = ease((t - Math.max(wd.s, rangeStart)) / 0.1);
+          const anim = style.anim || 'fade';
+          const t0 = Math.max(wd.s, rangeStart);
+          const k = ease((t - t0) / (anim === 'slide' ? 0.18 : 0.1));
           const spoken = t >= wd.s;
           const isKey = keys.includes(it.i);
-          const pop = spoken ? (1 - k) * ln.size * 0.06 : 0;
-          const bx = lay.x + it.x, by = lay.y + ln.baseline + rise + pop;
+          // fade keeps upcoming words visible but dim; the other styles reveal words as they are spoken
+          if (!spoken && anim !== 'fade') continue;
+          let dy = 0, scale = 1, text = it.text, alphaW = 1;
+          if (anim === 'fade') dy = spoken ? (1 - k) * ln.size * 0.06 : 0;
+          else if (anim === 'pop') {
+            // grow from 55% to a slight overshoot (108%) and settle at 100%
+            const q = Math.min(1, (t - t0) / 0.16);
+            scale = q < 0.7 ? 0.55 + 0.53 * (q / 0.7) : 1.08 - 0.08 * ((q - 0.7) / 0.3);
+            alphaW = Math.min(1, q * 3);
+          }
+          else if (anim === 'slide') { dy = (1 - k) * ln.size * 0.45; alphaW = k; }
+          else if (anim === 'type') {
+            const dur = Math.max(0.12, Math.min(0.45, (wd.e - wd.s) * 0.9));
+            const n = Math.max(1, Math.ceil(text.length * Math.min(1, (t - t0) / dur)));
+            text = text.slice(0, n);
+          }
+          const bx = lay.x + it.x, by = lay.y + ln.baseline + rise + dy;
+          ctx.save();
+          ctx.globalAlpha = alpha * alphaW;
+          if (scale !== 1) {
+            const cx = bx + it.w / 2, cy = by - ln.size * 0.36;
+            ctx.translate(cx, cy); ctx.scale(scale, scale); ctx.translate(-cx, -cy);
+          }
+          const kc = anim === 'fade' ? k : 1; // colour: fade style glows from grey, others land in their final colour
           if (isKey && theme.keyStyle === 'block' && spoken) {
             const padX = ln.size * 0.09;
             ctx.fillStyle = theme.keyBg;
-            ctx.fillRect(bx - padX, by - ln.size * 0.8, (it.w + padX * 2) * k, ln.size * 0.94);
-            ctx.fillStyle = mix(theme.text, theme.key, k);
+            const tw = anim === 'type' ? ctx.measureText(text).width : it.w;
+            ctx.fillRect(bx - padX, by - ln.size * 0.8, (tw + padX * 2) * (anim === 'fade' ? k : 1), ln.size * 0.94);
+            ctx.fillStyle = mix(theme.text, theme.key, kc);
           } else {
             const target = isKey ? theme.key : theme.text;
-            ctx.fillStyle = spoken ? mix(theme.from, target, k) : theme.dim;
+            ctx.fillStyle = spoken ? mix(theme.from, target, kc) : theme.dim;
           }
-          ctx.fillText(it.text, bx, by);
+          ctx.fillText(text, bx, by);
+          ctx.restore();
           if (wd.mark && spoken) marks.push({ kind: wd.mark, x: bx, top: by - ln.size * 0.74, w: it.w, h: ln.size * 0.74, size: ln.size, s: Math.max(wd.s, rangeStart), seed: wd.w + it.i + ci });
         }
       }
@@ -728,4 +754,33 @@ export function drawBadge(ctx, text, right, top, px, theme) {
   ctx.fillText(label, x + w / 2 + px * 0.06, top + h / 2 + px * 0.04);
   ctx.restore();
   return [x, top, w, h];
+}
+
+/**
+ * Approximate areas where TikTok, Instagram Reels and YouTube Shorts draw their own buttons and captions
+ * on a 9:16 video (union of the three). Preview only — never exported.
+ */
+export function drawSafeZones(ctx, fmt) {
+  if (fmt.id !== '9x16') return;
+  const { w: W, h: H } = fmt;
+  const zones = [
+    { x: 0, y: 0, w: W, h: H * 0.09, label: 'Top bar (tabs, search)' },
+    { x: W * 0.855, y: H * 0.36, w: W * 0.145, h: H * 0.46, label: 'Like / comment / share' },
+    { x: 0, y: H * 0.8, w: W, h: H * 0.2, label: 'Username, caption, sound' },
+  ];
+  ctx.save();
+  for (const z of zones) {
+    ctx.fillStyle = 'rgba(232, 81, 42, 0.18)';
+    ctx.fillRect(z.x, z.y, z.w, z.h);
+    ctx.strokeStyle = 'rgba(232, 81, 42, 0.9)'; ctx.lineWidth = 3; ctx.setLineDash([14, 10]);
+    ctx.strokeRect(z.x + 1.5, z.y + 1.5, z.w - 3, z.h - 3);
+    ctx.setLineDash([]);
+    ctx.font = `600 ${Math.round(W * 0.024)}px ${MONO_FONT}`; ctx.fillStyle = '#FFB39B'; ctx.textBaseline = 'top';
+    if (z.w > W * 0.5) ctx.fillText(z.label.toUpperCase(), z.x + W * 0.03, z.y + H * 0.012);
+    else {
+      ctx.save(); ctx.translate(z.x + z.w / 2 + W * 0.012, z.y + z.h / 2); ctx.rotate(Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.fillText(z.label.toUpperCase(), 0, 0); ctx.restore();
+    }
+  }
+  ctx.restore();
 }

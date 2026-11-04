@@ -59,7 +59,7 @@ async function pickAudioConfig(sampleRate, channels) {
  *   writable (FileSystemWritableFileStream|null), onProgress(fraction), signal (AbortSignal)
  * @returns {Promise<{blob?: Blob, audioCodec: string, videoCodec: string}>}
  */
-export async function renderMp4({ cards, style, fmt, audioBuffer, start = 0, end = null, intro = 0, outro = 0, music = null, speech = [], writable = null, onProgress = () => {}, signal }) {
+export async function renderMp4({ cards, style, fmt, audioBuffer, start = 0, end = null, intro = 0, outro = 0, music = null, speech = [], level = null, writable = null, onProgress = () => {}, signal }) {
   const W = fmt.w, H = fmt.h;
   start = Math.max(0, start);
   end = Math.min(audioBuffer.duration, end ?? audioBuffer.duration);
@@ -100,6 +100,15 @@ export async function renderMp4({ cards, style, fmt, audioBuffer, start = 0, end
   const aDown = 1 - Math.exp(-1 / (0.08 * sr)), aUp = 1 - Math.exp(-1 / (0.45 * sr));
   const fadeIn = sr * 1.0, fadeOut = sr * 2.0;
   let g = mVol;
+  // loudness levelling: one gain for the whole piece, with a soft limiter so peaks never clip
+  const vGain = level != null ? levelGain(audioBuffer, start, end, level) : 1;
+  const CEIL = 0.89, KNEE = 0.6;
+  const limit = (v) => {
+    const a = Math.abs(v);
+    if (a <= KNEE) return v;
+    const over = (a - KNEE) / (CEIL - KNEE);
+    return Math.sign(v) * (KNEE + (CEIL - KNEE) * Math.tanh(over));
+  };
   const BLOCK = 4096;
   let oPos = 0;
   function feedAudioUntil(sec) {
@@ -109,7 +118,13 @@ export async function renderMp4({ cards, style, fmt, audioBuffer, start = 0, end
       const data = new Float32Array(n * channels);
       // voice
       const vFrom = Math.max(oPos, introS), vTo = Math.min(oPos + n, introS + mainS);
-      if (vTo > vFrom) for (let ch = 0; ch < channels; ch++) data.set(planes[ch].subarray(s0 + vFrom - introS, s0 + vTo - introS), ch * n + (vFrom - oPos));
+      if (vTo > vFrom) {
+        for (let ch = 0; ch < channels; ch++) {
+          const src = planes[ch].subarray(s0 + vFrom - introS, s0 + vTo - introS), off = ch * n + (vFrom - oPos);
+          if (vGain === 1) data.set(src, off);
+          else for (let k = 0; k < src.length; k++) data[off + k] = limit(src[k] * vGain);
+        }
+      }
       // music
       if (mPlanes) {
         for (let k = 0; k < n; k++) {
@@ -185,4 +200,52 @@ export async function renderStill({ cards, style, fmt, t, range }) {
   // draw "settled" text: a moment after the screen's last word so every word is lit
   drawFrame(ctx, cards, t, fmt, { ...style, range });
   return canvas.convertToBlob({ type: 'image/png' });
+}
+
+// ---------------- loudness (ITU-R BS.1770 style, K-weighted, gated) ----------------
+const loudCache = new WeakMap();
+function biquad(x, b, a) {
+  const y = new Float32Array(x.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const v = b[0] * x[i] + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2;
+    x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
+  }
+  return y;
+}
+/** Integrated loudness (LUFS) of [start, end] seconds. Coefficients are the 48 kHz K-weighting filters. */
+export function measureLoudness(buf, start = 0, end = buf.duration) {
+  const key = `${start.toFixed(2)}-${end.toFixed(2)}`;
+  let per = loudCache.get(buf); if (!per) { per = {}; loudCache.set(buf, per); }
+  if (per[key] != null) return per[key];
+  const sr = buf.sampleRate, a0 = Math.floor(start * sr), a1 = Math.min(buf.length, Math.ceil(end * sr));
+  const chans = Math.min(2, buf.numberOfChannels);
+  const block = Math.round(0.4 * sr), hop = Math.round(0.1 * sr);
+  const energies = [];
+  const weighted = [];
+  for (let ch = 0; ch < chans; ch++) {
+    const x = buf.getChannelData(ch).subarray(a0, a1);
+    const s1 = biquad(x, [1.53512485958697, -2.69169618940638, 1.19839281085285], [1, -1.69065929318241, 0.73248077421585]);
+    weighted.push(biquad(s1, [1, -2, 1], [1, -1.99004745483398, 0.99007225036621]));
+  }
+  const n = a1 - a0;
+  // energy per 100 ms hop, then 400 ms blocks as sliding sums of 4 hops (75% overlap)
+  const hops = Math.floor(n / hop), he = new Float64Array(hops);
+  for (const w of weighted) for (let h = 0; h < hops; h++) { let m = 0; for (let j = h * hop, e = j + hop; j < e; j++) m += w[j] * w[j]; he[h] += m; }
+  const per4 = Math.round(block / hop);
+  for (let h = 0; h + per4 <= hops; h++) { let sum = 0; for (let k = 0; k < per4; k++) sum += he[h + k]; energies.push(sum / block); }
+  const lufs = (e) => -0.691 + 10 * Math.log10(e || 1e-12);
+  let gated = energies.filter((e) => lufs(e) > -70);
+  if (!gated.length) { per[key] = -70; return -70; }
+  const rel = lufs(gated.reduce((a, b) => a + b, 0) / gated.length) - 10;
+  gated = gated.filter((e) => lufs(e) > rel);
+  const L = lufs(gated.reduce((a, b) => a + b, 0) / gated.length);
+  per[key] = L;
+  return L;
+}
+/** Linear gain that brings the voice to `target` LUFS (limited to −12…+15 dB). */
+export function levelGain(buf, start, end, target = -14) {
+  const L = measureLoudness(buf, start, end);
+  const db = Math.max(-12, Math.min(15, target - L));
+  return Math.pow(10, db / 20);
 }

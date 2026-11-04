@@ -38,6 +38,15 @@ Projects auto-save in the browser, and **Save project** downloads a `.wdgta.json
 - **Subtitles**: .srt and .vtt saved alongside each video.
 - **Caption prompt**: copies the transcript with WDGTA voice rules to paste into Claude for hooks, captions, titles and hashtags.
 
+## Working faster
+
+- **Projects**: every project is kept in this browser with its recording and music. Reopen it from *Projects* (top bar) or *Recent projects* on the start screen; no need to add files again. *Save* still downloads a `.wdgta.json` backup you can open on another computer.
+- **Weekly pack** (Export tab): the full recording in 16:9, every clip in 9:16, the carousel slides and all subtitles in one run.
+- **Keyboard**: Space play/pause · ←/→ 5 s (Shift: 1 s) · S new screen at the playhead · Y make the spoken word yellow · M mute · ? all shortcuts.
+- **Loudness levelling**: exports are brought to about −14 LUFS (the level YouTube, Spotify and TikTok play at) with a soft limiter; boosts are capped at +15 dB so very quiet recordings don't turn hissy.
+- **Safe zones**: shows where TikTok, Reels and Shorts put their buttons on 9:16 (preview only).
+- **Word animation**: fade-in karaoke, pop, slide up or typewriter.
+
 ## Requirements
 
 - **Chrome or Edge (latest), on a laptop or desktop.** Video export uses the browser's built-in encoders (WebCodecs). Safari and Firefox are not supported for export.

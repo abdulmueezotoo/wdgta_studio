@@ -28,10 +28,12 @@
       <button type="button" class="vt" data-panel-toggle="tr" aria-pressed="true" title="Show or hide the transcript (Alt+1)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg><span class="sr">Transcript</span></button>
       <button type="button" class="vt" data-panel-toggle="tl" aria-pressed="true" title="Show or hide the timeline (Alt+2)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 14h18"/></svg><span class="sr">Timeline</span></button>
       <button type="button" class="vt" data-panel-toggle="ins" aria-pressed="true" title="Show or hide the inspector (Alt+3)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg><span class="sr">Inspector</span></button>
+      <button type="button" class="vt" id="btnKeys" title="Keyboard shortcuts (?)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg><span class="sr">Keyboard shortcuts</span></button>
       <button type="button" class="vt" id="btnLayoutDefault" title="Reset panel sizes"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.6M4 4v4h4"/></svg><span class="sr">Reset panel sizes</span></button>
     </div>
     <div class="top-actions">
-      <button class="btn ghost" id="btnOpen" type="button">Open</button>
+      <button class="btn ghost" id="btnProjects" type="button">Projects</button>
+      <button class="btn ghost" id="btnOpen" type="button" title="Open a .wdgta.json project file">Open file</button>
       <button class="btn ghost" id="btnSave" type="button" disabled>Save</button>
       <button class="btn ghost" id="btnNew" type="button">New</button>
       <button class="btn primary" id="btnExportTop" type="button" disabled>Export…</button>
@@ -69,7 +71,11 @@
         <p class="hint">The first run downloads the speech model (about 80–250 MB depending on quality). After that it stays in this browser.</p>
       </div>
       <p class="error" id="audioError" role="alert" hidden></p>
-      <p class="hint">Or <button class="linkbtn" id="btnOpen2" type="button">open a saved project</button>.</p>
+      <p class="hint">Or <button class="linkbtn" id="btnOpen2" type="button">open a project file</button>.</p>
+      <div class="recent" id="recentBox" hidden>
+        <h2>Recent projects</h2>
+        <ol class="proj-list" id="recentList"></ol>
+      </div>
     </div>
   </section>
 
@@ -123,7 +129,10 @@
     <div class="split split-v" id="splitL" role="separator" aria-orientation="vertical" aria-label="Resize transcript" tabindex="0" title="Drag to resize. Double-click to reset."></div>
 
     <section class="viewer" aria-label="Viewer">
-      <div class="fmt-tabs" role="tablist" id="fmtTabs"></div>
+      <div class="viewer-top">
+        <div class="fmt-tabs" role="tablist" id="fmtTabs"></div>
+        <button class="btn small ghost" id="btnSafe" type="button" aria-pressed="false" title="Show where TikTok, Reels and Shorts put their buttons (9:16)">Safe zones</button>
+      </div>
       <div class="stage" id="stage">
         <canvas id="canvas" aria-label="Video preview. Drag the words, logo, title, handle or note to move them."></canvas>
         <div class="fs-bar" id="fsBar">
@@ -226,6 +235,14 @@
             <select id="optKeys"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select>
           </label>
           <button class="btn small ghost" id="btnRepick" type="button">Apply to all screens</button>
+          <label class="row-field">Word animation
+            <select id="optAnim">
+              <option value="fade">Fade in (karaoke)</option>
+              <option value="pop">Pop</option>
+              <option value="slide">Slide up</option>
+              <option value="type">Typewriter</option>
+            </select>
+          </label>
           <label class="check"><input type="checkbox" id="optUpper" checked> Capital letters</label>
         </div>
 
@@ -370,9 +387,15 @@
           <p class="hint" id="destHint">With Google Drive for desktop installed, pick a folder inside "Google Drive" and the videos upload automatically.</p>
         </div>
         <label class="check"><input type="checkbox" id="exSubs" checked> Also save subtitles (.srt and .vtt)</label>
+        <label class="check"><input type="checkbox" id="exLevel" checked> Level loudness for social media (−14 LUFS)</label>
         <div class="btn-row">
           <button class="btn primary" id="btnExport" type="button">Export videos</button>
           <button class="btn ghost" id="btnCancel" type="button" hidden>Cancel</button>
+        </div>
+        <div class="group pack">
+          <span class="label">Weekly pack</span>
+          <p class="hint">One click: the full recording in 16:9, every clip in 9:16, the carousel slides and all subtitles, into one folder.</p>
+          <button class="btn" id="btnPack" type="button">Export weekly pack</button>
         </div>
         <button class="btn small ghost" id="btnStill" type="button">Save current frame as image</button>
         <div class="bar" hidden id="exBarWrap"><span id="exBar"></span></div>
@@ -417,6 +440,28 @@
     </section>
   </div>
 </div>
+<dialog class="dlg" id="projDialog" aria-labelledby="projDlgTitle">
+  <div class="dlg-head"><h2 id="projDlgTitle">Projects</h2><button class="x-btn" type="button" data-close aria-label="Close">×</button></div>
+  <p class="hint">Saved in this browser on this computer, with their recordings and music. Use "Save" to keep a copy as a file.</p>
+  <ol class="proj-list" id="projList"></ol>
+  <p class="hint mono" id="projStorage"></p>
+</dialog>
+<dialog class="dlg" id="keysDialog" aria-labelledby="keysDlgTitle">
+  <div class="dlg-head"><h2 id="keysDlgTitle">Keyboard shortcuts</h2><button class="x-btn" type="button" data-close aria-label="Close">×</button></div>
+  <dl class="keys">
+    <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+    <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Back / forward 5 seconds (hold Shift for 1 second)</dd>
+    <dt><kbd>S</kbd></dt><dd>Start a new screen at the playhead</dd>
+    <dt><kbd>Y</kbd></dt><dd>Make the word being spoken yellow (press again to undo)</dd>
+    <dt><kbd>M</kbd></dt><dd>Mute / unmute</dd>
+    <dt><kbd>&lt;</kbd> <kbd>&gt;</kbd></dt><dd>Slower / faster playback</dd>
+    <dt><kbd>+</kbd> <kbd>−</kbd></dt><dd>Zoom the timeline</dd>
+    <dt><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Z</kbd></dt><dd>Undo</dd>
+    <dt><kbd>Alt</kbd> + <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Show / hide transcript, timeline, inspector</dd>
+    <dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>With a design element selected: nudge it (Shift moves further)</dd>
+    <dt><kbd>?</kbd></dt><dd>This list</dd>
+  </dl>
+</dialog>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
