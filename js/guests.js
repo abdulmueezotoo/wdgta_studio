@@ -230,6 +230,86 @@ function exportCSV() {
   a.download = `wdgta-guests-${today()}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
 }
+// ---------------- import (.json from WDGTA, or .csv with a header row) ----------------
+const FIELD_KEYS = Object.keys(blank());
+const HEADER_ALIASES = {
+  'founder name': 'name', 'founder': 'name', 'guest': 'name', 'venture': 'company', 'business': 'company',
+  'topic': 'angle', 'episode angle': 'angle', 'next steps': 'nextAction', 'next step': 'nextAction', 'next action': 'nextAction',
+  'due': 'nextDate', 'by': 'nextDate', 'discovery date': 'discoveryDate', 'scheduled date': 'discoveryDate',
+  'recording date': 'recordingDate', 'whatsapp': 'phone', 'website': 'social', 'how we found them': 'source',
+};
+function parseCSV(text) {
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (c === '"') q = false; else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter((r) => r.some((v) => v.trim()));
+}
+function toISODate(v) {
+  if (!v) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const t = Date.parse(String(v).replace(/^[A-Za-z]+,\s*/, ''));
+  return Number.isNaN(t) ? '' : new Date(t + 12 * 36e5).toISOString().slice(0, 10);
+}
+function stageFrom(v) {
+  const x = String(v || '').trim().toLowerCase();
+  const hit = STAGES.find((s) => s.id === x || s.name.toLowerCase() === x);
+  return hit ? hit.id : '';
+}
+function clean(raw) {
+  const g = blank();
+  for (const [k, v] of Object.entries(raw || {})) {
+    const key = FIELD_KEYS.includes(k) ? k : HEADER_ALIASES[String(k).trim().toLowerCase()] || FIELD_KEYS.find((f) => f.toLowerCase() === String(k).trim().toLowerCase());
+    if (!key || key === 'id' || v == null || v === '') continue;
+    if (['consent', 'photo', 'bio'].includes(key)) g[key] = v === true || /^(true|yes|y|✓|1)$/i.test(String(v));
+    else if (key === 'stage') g.stage = stageFrom(v) || g.stage;
+    else if (/Date$/.test(key)) g[key] = toISODate(v);
+    else if (key === 'createdAt' || key === 'updatedAt') g[key] = Number(v) || g[key];
+    else g[key] = String(v).trim();
+  }
+  if (raw && raw.replaces) g.replaces = String(raw.replaces);
+  return g;
+}
+const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+async function importFile(file) {
+  const text = await file.text();
+  let items = [];
+  if (/\.json$/i.test(file.name) || /^\s*[\[{]/.test(text)) {
+    const data = JSON.parse(text);
+    items = Array.isArray(data) ? data : data.guests || [];
+  } else {
+    const [head, ...rows] = parseCSV(text);
+    items = rows.map((r) => Object.fromEntries(head.map((h, i) => [h, r[i]])));
+  }
+  let added = 0, updated = 0;
+  for (const raw of items) {
+    const g = clean(raw);
+    if (!g.name) continue;
+    const match = guests.find((x) => norm(x.name) === norm(g.name) && (!x.company || !g.company || norm(x.company) === norm(g.company)))
+      || (g.replaces && guests.find((x) => norm(x.name) === norm(g.replaces)));
+    delete g.replaces;
+    if (match) {
+      // fill in what the board doesn't have yet; never overwrite your own edits
+      for (const k of FIELD_KEYS) {
+        if (['id', 'createdAt', 'updatedAt'].includes(k)) continue;
+        const empty = match[k] === '' || match[k] === false || match[k] == null || (k === 'name' && /^Founder \d+$/.test(match.name));
+        if (k === 'stage') { if (STAGE_IX[g.stage] > STAGE_IX[match.stage] && match.stage !== 'parked') match.stage = g.stage; continue; }
+        if (k === 'nextAction' && /^(Confirm who fills this recording slot)$/.test(match.nextAction) && g.nextAction) { match.nextAction = g.nextAction; continue; }
+        if (empty && g[k] !== '' && g[k] !== false) match[k] = g[k];
+      }
+      match.updatedAt = Date.now(); updated++;
+    } else { guests.push(g); added++; }
+  }
+  save(); renderAll(); renderDetail();
+  ctx.notice(`Imported ${added} new guest${added === 1 ? '' : 's'}${updated ? ` and filled in ${updated} already on the board` : ''}.`);
+}
+
 function seedFromPlan() {
   // Matches the pre-launch production plan: founders are "Founder 1–6" until names are confirmed.
   const f1 = blank('recorded');
@@ -256,6 +336,12 @@ function bind() {
   $('gAdd').onclick = () => addGuest();
   $('gSeed').onclick = seedFromPlan;
   $('gCsv').onclick = exportCSV;
+  $('gImport').onclick = () => $('gImportFile').click();
+  $('gImportFile').onchange = async (e) => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try { await importFile(f); } catch (err) { ctx.notice(`Could not import that file: ${err.message || err}`); }
+  };
   $('gSearch').oninput = (e) => { query = e.target.value.trim(); renderAll(); };
   document.querySelectorAll('[data-gview]').forEach((b) => b.onclick = () => { view = b.dataset.gview; renderAll(); });
   const main = $('guestsView');

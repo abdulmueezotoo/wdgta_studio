@@ -56,6 +56,7 @@ Open **Guests** in the top bar (or go to `#guests`). It tracks every founder fro
 - **Detail panel.** Contact details, episode angle, discovery notes, recording date, consent / photo / bio checks, and a link to the guest's Studio project. It saves as you type.
 - **Bank counters.** Recorded toward the 5–6 November–December recordings, and edited toward the 4 needed by the 13 Dec readiness check.
 - **Next actions.** Each guest has a next action with a date; ones due soon show in yellow, and overdue ones in marker orange.
+- **Import** a `.json` (from WDGTA) or a `.csv` with a header row (columns such as Founder Name, Venture, Topic, Next Steps, Scheduled Date are recognised). Re-importing fills in gaps and never duplicates or overwrites your edits.
 - **Export CSV** for a spreadsheet copy.
 - **Storage.** Guests are kept in this browser. When a projects folder is connected (Studio → Projects), they are also saved as `wdgta-guests.json` in that folder and restored from it if the browser is cleared.
 

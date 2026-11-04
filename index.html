@@ -455,12 +455,14 @@
       </div>
       <input id="gSearch" class="g-search" type="search" placeholder="Search name, company, sector…" aria-label="Search guests" autocomplete="off">
       <span class="hint mono" id="gSaved"></span>
+      <button class="btn ghost" id="gImport" type="button" title="Import a .json or .csv list of guests">Import</button>
+      <input id="gImportFile" type="file" accept=".json,.csv,application/json,text/csv" hidden>
       <button class="btn ghost" id="gCsv" type="button">Export CSV</button>
       <button class="btn primary" id="gAdd" type="button">Add guest</button>
     </div>
     <div class="g-stats" id="gStats" aria-live="polite"></div>
     <div class="g-empty" id="gEmpty" hidden>
-      <p>No guests yet. Add the founders you are talking to, or start from the production plan's six recording slots (Founder 1 recorded, Founder 2–6 to confirm).</p>
+      <p>No guests yet. Add the founders you are talking to, import a list (.csv or .json), or start from the production plan's six recording slots (Founder 1 recorded, Founder 2–6 to confirm).</p>
       <button class="btn small" id="gSeed" type="button">Add Founder 1–6 slots</button>
     </div>
     <div class="g-body">
