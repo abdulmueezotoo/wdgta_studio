@@ -20,7 +20,7 @@
     <nav class="modules" aria-label="WDGTA modules">
       <a class="module is-active" href="#studio" aria-current="page">Studio</a>
       <a class="module" href="#guests">Guests</a>
-      <span class="module is-later" title="Coming later">Episodes</span>
+      <a class="module" href="#episodes">Episodes</a>
       <span class="module is-later" title="Coming later">Calendar</span>
       <span class="module is-later" title="Coming later">Reality Radar</span>
     </nav>
@@ -446,7 +446,7 @@
     </section>
   </div>
   <!-- MODULE 02: Guests -->
-  <main class="guests" id="guestsView" aria-labelledby="h-guests">
+  <main class="guests module-view" id="guestsView" aria-labelledby="h-guests">
     <div class="g-toolbar">
       <h1 id="h-guests">Guests</h1>
       <div class="seg" role="group" aria-label="View">
@@ -471,6 +471,33 @@
         <div class="g-list" id="gList" hidden></div>
       </div>
       <aside class="g-detail" id="gDetail" aria-label="Guest details" hidden></aside>
+    </div>
+  </main>
+
+  <!-- MODULE 03: Episodes -->
+  <main class="guests module-view" id="episodesView" aria-labelledby="h-episodes">
+    <div class="g-toolbar">
+      <h1 id="h-episodes">Episodes</h1>
+      <div class="seg" role="group" aria-label="View">
+        <button type="button" data-eview="board" aria-pressed="true">Board</button>
+        <button type="button" data-eview="plan" aria-pressed="false">Release plan</button>
+      </div>
+      <input id="eSearch" class="g-search" type="search" placeholder="Search title, guest…" aria-label="Search episodes" autocomplete="off">
+      <span class="hint mono" id="eSaved"></span>
+      <button class="btn ghost" id="eAddCap" type="button">Add Capsule</button>
+      <button class="btn primary" id="eAddEp" type="button">Add episode</button>
+    </div>
+    <div class="g-stats" id="eStats" aria-live="polite"></div>
+    <div class="g-empty" id="eEmpty" hidden>
+      <p>No episodes yet. Start from what's already planned: the published trailer, Episode 1 releasing on 3 Jan, and the founder conversation already recorded.</p>
+      <button class="btn small" id="eSeed" type="button">Add what's planned</button>
+    </div>
+    <div class="g-body">
+      <div class="g-main">
+        <div class="g-board" id="eBoard"></div>
+        <div class="g-list" id="ePlan" hidden></div>
+      </div>
+      <aside class="g-detail" id="eDetail" aria-label="Episode details" hidden></aside>
     </div>
   </main>
 </div>

@@ -173,7 +173,7 @@ async function renderDetail() {
       <label class="check"><input type="checkbox" data-f="photo" ${g.photo ? 'checked' : ''}> Photo received</label>
       <label class="check"><input type="checkbox" data-f="bio" ${g.bio ? 'checked' : ''}> Bio and links confirmed</label>
       <label class="gf"><span>Studio project</span><select data-f="studioProject"><option value="">Not linked</option>${projects.map((p) => `<option value="${esc(p.id)}" ${p.id === g.studioProject ? 'selected' : ''}>${esc(p.title)}</option>`).join('')}</select></label>
-      ${g.studioProject ? '<button class="btn small" type="button" data-open-studio>Open in Studio</button>' : ''}
+      <div class="btn-row">${g.studioProject ? '<button class="btn small" type="button" data-open-studio>Open in Studio</button>' : ''}<button class="btn small ghost" type="button" data-plan-ep>Plan an episode</button></div>
     </fieldset>
     <fieldset class="gd-sec"><legend>Contact</legend>
       <div class="gd-grid">${f('phone', 'Phone / WhatsApp', g.phone, 'tel')}${f('email', 'Email', g.email, 'email')}</div>
@@ -325,9 +325,10 @@ function seedFromPlan() {
 
 // ---------------- wiring ----------------
 let bound = false;
+let loaded = false;
 export async function initGuests(c) {
   ctx = { ...ctx, ...c };
-  await load();
+  if (!loaded) { await load(); loaded = true; }
   if (!bound) bind();
   renderAll(); renderDetail();
 }
@@ -370,6 +371,7 @@ function bind() {
   });
   d.addEventListener('click', async (e) => {
     if (e.target.closest('[data-close]')) { selId = null; renderAll(); renderDetail(); return; }
+    if (e.target.closest('[data-plan-ep]')) { await flush(); ctx.planEpisode?.(selId); return; }
     if (e.target.closest('[data-open-studio]')) { const g = guests.find((x) => x.id === selId); if (g?.studioProject) ctx.openStudioProject(g.studioProject); return; }
     const del = e.target.closest('[data-del]');
     if (del) {
@@ -378,5 +380,21 @@ function bind() {
     }
   });
 }
+/** Guests for other modules (Episodes, Calendar). Loads them if Guests hasn't been opened yet. */
+export async function guestsData(c = {}) {
+  ctx = { ...ctx, ...c };
+  if (!loaded) { await load(); loaded = true; }
+  return guests;
+}
+/** Move a guest forward to a later stage (never backwards); used when an episode progresses. */
+export function bumpGuest(id, stage) {
+  const g = guests.find((x) => x.id === id);
+  if (!g || g.stage === 'parked' || !(stage in STAGE_IX) || STAGE_IX[stage] <= STAGE_IX[g.stage]) return false;
+  g.stage = stage; g.updatedAt = Date.now();
+  if (stage === 'recorded' && !g.recordingDate) g.recordingDate = today();
+  save(); if (bound) renderAll();
+  return true;
+}
+export async function focusGuest(id) { if (guests.some((g) => g.id === id)) await select(id); }
 export async function refreshGuests() { renderAll(); await renderDetail(); }
 export function flushGuests() { if (saveTimer) return flush(); }

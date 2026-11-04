@@ -60,6 +60,22 @@ Open **Guests** in the top bar (or go to `#guests`). It tracks every founder fro
 - **Export CSV** for a spreadsheet copy.
 - **Storage.** Guests are kept in this browser. When a projects folder is connected (Studio → Projects), they are also saved as `wdgta-guests.json` in that folder and restored from it if the browser is cleared.
 
+## Episodes (module 03)
+
+Open **Episodes** in the top bar (or go to `#episodes`). It tracks every founder episode, Capsule and trailer.
+
+- **Board.** Stages: Planned, Recorded, Editing, Review, Ready, Scheduled and Published. Drag a card to change its stage.
+- **Release plan.** All dated releases in order, with every Capsule Sunday from 1 Nov to 27 Dec (an empty one has **+ Capsule**). It also shows the 13 Dec readiness check, Episode 1 on 3 Jan and the launch session on 10 Jan.
+- **Detail panel.** Each episode has:
+  - title and number (Capsules are numbered automatically; founder episodes get a number when you decide the order)
+  - its guest and its Studio project
+  - recording and release dates
+  - a before-release checklist: audio, video, thumbnail, show notes, captions, clips, and guest approval
+  - show notes, published links and notes
+- **Linked to Guests.** "Plan an episode" on a guest opens a new episode for them. When an episode moves forward, its guest moves forward on the Guests board too.
+- **Flags.** An episode is flagged when its release date has passed, or when it releases within a week and isn't ready.
+- **Storage.** Kept in this browser, and saved as `wdgta-episodes.json` in the projects folder when one is connected.
+
 ## Requirements
 
 - **Chrome or Edge (latest), on a laptop or desktop.** Video export uses the browser's built-in encoders (WebCodecs). Safari and Firefox are not supported for export.
