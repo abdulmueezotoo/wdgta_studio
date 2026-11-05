@@ -48,6 +48,16 @@ Projects auto-save in the browser, and **Save project** downloads a `.wdgta.json
 - **Safe zones**: shows where TikTok, Reels and Shorts put their buttons on 9:16 (preview only).
 - **Word animation**: fade-in karaoke, pop, slide up or typewriter.
 
+## Home
+
+The app opens on **Home** (`#home`). Everything on it is read live from the other modules:
+
+- **Greeting** with the date, the days left to Episode 1, and where the January bank stands.
+- **Next up:** overdue items, the next seven days, and how many founders are waiting to be booked.
+- **Road to launch:** every Capsule Sunday, the 13 Dec readiness check, Episode 1 on 3 Jan and the launch session on 10 Jan, with today marked.
+- **January bank meters:** recorded, edited, and Capsule Sundays published.
+- **Module doors** with a live line each: last Studio project, guest counts, next release, next calendar item.
+
 ## Guests (module 02)
 
 Open **Guests** in the top bar (or go to `#guests`). It tracks every founder from first contact to a published episode.

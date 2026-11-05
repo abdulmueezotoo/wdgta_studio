@@ -18,7 +18,8 @@
     <img class="brand" src="assets/wdgta-logo-white.png" alt="We Dey Go Through Am">
     <span class="divider" aria-hidden="true"></span>
     <nav class="modules" aria-label="WDGTA modules">
-      <a class="module is-active" href="#studio" aria-current="page">Studio</a>
+      <a class="module" href="#home">Home</a>
+      <a class="module" href="#studio">Studio</a>
       <a class="module" href="#guests">Guests</a>
       <a class="module" href="#episodes">Episodes</a>
       <a class="module" href="#calendar">Calendar</a>
@@ -445,6 +446,33 @@
       </div>
     </section>
   </div>
+  <!-- HOME -->
+  <main class="guests module-view home" id="homeView" aria-labelledby="hHello">
+    <div class="h-wrap">
+      <section class="h-hero">
+        <div class="h-intro">
+          <span class="mono h-date" id="hDate"></span>
+          <h1 class="h-hello" id="hHello">Hello.</h1>
+          <p class="h-lead" id="hLead"></p>
+          <span class="h-tag">We dey go through am.</span>
+        </div>
+        <aside class="h-card" aria-labelledby="hNextH">
+          <h2 class="h-label" id="hNextH">NEXT UP</h2>
+          <div id="hNext"></div>
+        </aside>
+      </section>
+      <section aria-labelledby="hRoadH" class="h-sec">
+        <h2 class="h-label" id="hRoadH">ROAD TO LAUNCH</h2>
+        <div class="road-scroll"><ol class="road" id="hRoad"></ol></div>
+      </section>
+      <section aria-label="January bank" class="h-bank" id="hBank"></section>
+      <section aria-labelledby="hDoorsH" class="h-sec">
+        <h2 class="h-label" id="hDoorsH">OPEN A MODULE</h2>
+        <div class="h-doors" id="hDoors"></div>
+      </section>
+    </div>
+  </main>
+
   <!-- MODULE 02: Guests -->
   <main class="guests module-view" id="guestsView" aria-labelledby="h-guests">
     <div class="g-toolbar">

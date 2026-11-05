@@ -7,6 +7,7 @@ import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter
 import { initGuests, refreshGuests, flushGuests, focusGuest } from './guests.js';
 import { initEpisodes, planEpisodeFor, flushEpisodes, focusEpisode } from './episodes.js';
 import { initCalendar, flushCalendar } from './calendar.js';
+import { renderHome } from './home.js';
 import {
   saveProject as libSave, listProjects, getProject, deleteProject, putFile, getFile, deleteFile, storageEstimate,
   folderSupported, getDirHandle, setDirHandle, dirPermission, saveToFolder, scanFolder, persistStorage,
@@ -2003,18 +2004,18 @@ function offerResume() {
 // ---------------- modules (Studio, Guests, …) ----------------
 let currentModule = 'studio';
 let guestsReady = false;
-const MODULES = ['studio', 'guests', 'episodes', 'calendar'];
+const MODULES = ['home', 'studio', 'guests', 'episodes', 'calendar'];
 let pendingGuest = null, pendingEpisodeFor = null, pendingEpisode = null;
 async function route() {
-  const m = (location.hash.replace('#', '') || 'studio').toLowerCase();
-  const next = MODULES.includes(m) ? m : 'studio';
+  const m = (location.hash.replace('#', '') || 'home').toLowerCase();
+  const next = MODULES.includes(m) ? m : 'home';
   if (currentModule === 'studio' && next !== 'studio') { audio.pause(); flushSave(); }
   if (currentModule === 'guests' && next !== 'guests') flushGuests();
   if (currentModule === 'episodes' && next !== 'episodes') flushEpisodes();
   if (currentModule === 'calendar' && next !== 'calendar') flushCalendar();
   currentModule = next;
   document.body.dataset.module = next;
-  document.title = next === 'studio' ? 'WDGTA Studio' : `${next[0].toUpperCase()}${next.slice(1)} · WDGTA`;
+  document.title = next === 'studio' ? 'WDGTA Studio' : next === 'home' ? 'WDGTA' : `${next[0].toUpperCase()}${next.slice(1)} · WDGTA`;
   document.querySelectorAll('.modules a.module').forEach((a) => {
     const on = a.getAttribute('href') === `#${next}`;
     a.classList.toggle('is-active', on);
@@ -2038,6 +2039,8 @@ async function route() {
     if (pendingEpisode) { const id = pendingEpisode; pendingEpisode = null; await focusEpisode(id); }
   } else if (next === 'calendar') {
     await initCalendar(ctx);
+  } else if (next === 'home') {
+    await renderHome({ ...ctx, hostName: state.settings.names?.host || 'Abdul Mueez Otoo' });
   } else if (!$('workspace').hidden) requestAnimationFrame(() => { drawPreview(); tlInvalidate(); });
 }
 window.addEventListener('hashchange', route);

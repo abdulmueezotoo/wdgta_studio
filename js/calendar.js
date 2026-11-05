@@ -57,7 +57,7 @@ async function flush() {
 window.addEventListener('pagehide', () => { if (saveTimer) flush(); });
 
 // ---------------- items from every module ----------------
-function items() {
+function items(all = false) {
   const t = today();
   const out = [];
   const epGuestRec = new Set(eps.filter((e) => e.guestId && e.recordingDate).map((e) => e.guestId));
@@ -84,7 +84,7 @@ function items() {
   for (const m of MILESTONES) out.push({ key: `m:${m.date}`, date: m.date, kind: 'milestone', title: m.label, sub: 'Locked plan', src: 'milestone' });
   for (const o of own) out.push({ key: `o:${o.id}`, date: o.date, kind: 'own', title: o.title || 'Untitled', sub: [o.type, o.time].filter(Boolean).join(' · '), time: o.time, src: 'own', ref: o.id, field: 'date', done: o.done });
   const order = { milestone: 0, release: 1, capsule: 2, recording: 3, discovery: 4, action: 5, own: 6 };
-  return out.filter((i) => i.date && !pref.hidden.includes(i.kind))
+  return out.filter((i) => i.date && (all || !pref.hidden.includes(i.kind)))
     .sort((a, b) => a.date.localeCompare(b.date) || order[a.kind] - order[b.kind] || String(a.time || '').localeCompare(String(b.time || '')));
 }
 const draggable = (i) => ['guest', 'episode', 'own'].includes(i.src);
@@ -250,6 +250,14 @@ export async function initCalendar(c) {
   if (!loaded) { await load(); loaded = true; }
   if (!bound) bind();
   renderAll(); renderDetail();
+}
+/** Every dated item, ignoring the filter chips. Used by Home. */
+export async function calendarItems(c = {}) {
+  ctx = { ...ctx, ...c };
+  eps = await episodesData({ getDir: ctx.getDir, notice: ctx.notice });
+  guests = await guestsData();
+  if (!loaded) { await load(); loaded = true; }
+  return items(true);
 }
 export function flushCalendar() { if (saveTimer) return flush(); }
 function bind() {
