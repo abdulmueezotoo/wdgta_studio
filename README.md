@@ -48,6 +48,13 @@ Projects auto-save in the browser, and **Save project** downloads a `.wdgta.json
 - **Safe zones**: shows where TikTok, Reels and Shorts put their buttons on 9:16 (preview only).
 - **Word animation**: fade-in karaoke, pop, slide up or typewriter.
 
+### Editing on the video, call to action and your default layout
+
+- **Double-click the words on the video** to edit that screen in place. Press Enter to save or Esc to cancel. If you change the number of words, the screen's timing is shared out across the new words.
+- **Punctuation shows on the video** (commas, full stops, question marks, colons and so on), the way it appears in the transcript.
+- **Call to action.** Design → Call to action sets the line under the title (for example "Follow @wedeygothrougham for more"). Pick a preset or type your own. It can be moved and resized like any other element.
+- **My default layout.** Arrange a project the way you like, then press Design → **Make this my default layout**. Every project then starts with that layout, in every format. **Reset to my default** brings an existing project back in line.
+
 ## Home
 
 The app opens on **Home** (`#home`). Everything on it is read live from the other modules:

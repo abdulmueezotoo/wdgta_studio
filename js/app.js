@@ -1,7 +1,7 @@
 // WDGTA Studio — app controller (upload → transcribe → edit → preview → clips → export).
 import {
   FORMATS, ELEMENTS, THEMES, buildCards, autoKeys, normalizeCard, drawFrame, drawSafeZones, cardAt, cardStart, cardEnd,
-  loadFonts, resolveLayout, defaultLayout, suggestClips, drawBookend,
+  loadFonts, resolveLayout, defaultLayout, setUserLayouts, suggestClips, drawBookend,
 } from './render.js';
 import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter.js';
 import { initGuests, refreshGuests, flushGuests, focusGuest } from './guests.js';
@@ -92,6 +92,7 @@ function styleObj(extra = {}) {
   return {
     upper: state.settings.upper,
     handle: state.settings.handle,
+    cta: state.settings.cta || 'Follow @wedeygothrougham for more',
     progress: state.settings.progress,
     title: state.settings.showTitle ? state.title : '',
     showLogo: state.settings.showLogo,
@@ -590,6 +591,104 @@ function updateElbar() {
   if (document.activeElement !== $('elY')) $('elY').value = Math.round(y);
 }
 
+// ---------------- your default layout ----------------
+const MY_LAYOUT_KEY = 'wdgta-studio:myLayout';
+try { setUserLayouts(JSON.parse(localStorage.getItem(MY_LAYOUT_KEY) || '{}')); } catch { setUserLayouts({}); }
+function saveMyLayout() {
+  // every element's current position in every format, as this project shows them
+  const mine = {};
+  for (const fid of Object.keys(FORMATS)) {
+    const r = resolveLayout(fid, state.settings.layouts);
+    mine[fid] = Object.fromEntries(Object.entries(r).map(([k, v]) => [k, { ...v }]));
+  }
+  try { localStorage.setItem(MY_LAYOUT_KEY, JSON.stringify(mine)); } catch {}
+  setUserLayouts(mine);
+  notice('Saved. Every project now starts with this layout. Elements you have moved in a project stay where you put them; use "Reset to my default" there to bring them in line.', 8000);
+}
+function useMyLayout() {
+  state.settings.layouts = {};
+  persist(); drawPreview(); updateElbar();
+  notice('This project now uses your default layout.', 4000);
+}
+
+// ---------------- edit the words right on the video (double-click) ----------------
+let wordEditor = null;
+function openWordEditor() {
+  if (!state.cards.length || previewMode) return;
+  const ci = cardAt(state.cards, audio.currentTime || 0);
+  if (ci < 0 || !lastBoxes.text) return;
+  audio.pause();
+  closeWordEditor(false);
+  const card = state.cards[ci];
+  const r = canvas.getBoundingClientRect(), st = $('stage').getBoundingClientRect(), f = FORMATS[state.fmt];
+  const [bx, by, bw, bh] = lastBoxes.text;
+  const k = r.width / f.w;
+  const ta = document.createElement('textarea');
+  ta.className = 'word-editor';
+  ta.setAttribute('aria-label', 'Edit the words on this screen');
+  ta.value = card.words.map((w) => w.w).join(' ');
+  const left = Math.max(r.left, r.left + bx * k - 8) - st.left;
+  const width = Math.min(r.width - (left - (r.left - st.left)) - 8, Math.max(220, bw * k + 16));
+  ta.style.left = `${left}px`;
+  ta.style.top = `${Math.max(r.top, r.top + by * k - 8) - st.top}px`;
+  ta.style.width = `${width}px`;
+  ta.style.minHeight = `${Math.max(64, bh * k + 16)}px`;
+  if (state.settings.upper === false) ta.style.textTransform = 'none';
+  $('stage').appendChild(ta);
+  const hint = document.createElement('span');
+  hint.className = 'word-editor-hint mono';
+  hint.textContent = 'Enter to save · Esc to cancel';
+  hint.style.left = ta.style.left;
+  $('stage').appendChild(hint);
+  wordEditor = { ta, hint, ci, original: ta.value };
+  const placeHint = () => { hint.style.top = `${ta.offsetTop + ta.offsetHeight + 6}px`; };
+  placeHint();
+  ta.addEventListener('input', () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight}px`; placeHint(); });
+  ta.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Escape') { e.preventDefault(); closeWordEditor(false); }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); closeWordEditor(true); }
+  });
+  ta.addEventListener('blur', () => setTimeout(() => closeWordEditor(true), 0));
+  ta.focus(); ta.select();
+}
+function closeWordEditor(commit) {
+  if (!wordEditor) return;
+  const { ta, hint, ci, original } = wordEditor;
+  wordEditor = null;
+  ta.remove(); hint.remove();
+  const text = ta.value.replace(/\s+/g, ' ').trim();
+  if (!commit || text === original.replace(/\s+/g, ' ').trim()) return;
+  if (!text) { notice('A screen needs at least one word. Nothing changed.', 3500); return; }
+  const card = state.cards[ci];
+  if (!card) return;
+  snapshot();
+  const tokens = text.split(' ');
+  if (tokens.length === card.words.length) {
+    tokens.forEach((t, i) => { card.words[i].w = t; });
+  } else {
+    // re-time the screen's words across the same span, weighted by length
+    const s0 = cardStart(card), e0 = cardEnd(card);
+    const weights = tokens.map((t) => Math.max(2, t.length));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let acc = s0;
+    const old = card.words;
+    card.words = tokens.map((t, i) => {
+      const d = (e0 - s0) * weights[i] / total;
+      const w = { w: t, s: +acc.toFixed(3), e: +(acc + d).toFixed(3) };
+      if (old[i]?.mark && i < old.length) w.mark = old[i].mark;
+      acc += d;
+      return w;
+    });
+    card.keys = (card.keys || []).filter((i) => i < tokens.length);
+  }
+  renderCards(); persist(); drawPreview(); tlInvalidate();
+}
+canvas.addEventListener('dblclick', (e) => {
+  if (!state.cards.length || previewMode) return;
+  if (hitTest(toOut(e)) === 'text') { e.preventDefault(); openWordEditor(); }
+});
+
 // ---------------- full screen ----------------
 async function enterFull() {
   try { await $('stage').requestFullscreen(); } catch { /* not allowed: ignore */ }
@@ -850,6 +949,7 @@ function loadState(data) {
 function applySettingsUI() {
   $('optUpper').checked = state.settings.upper;
   $('optHandle').checked = state.settings.handle;
+  $('ctaText').value = state.settings.cta || 'Follow @wedeygothrougham for more';
   $('optProgress').checked = state.settings.progress;
   $('optTitle').checked = state.settings.showTitle;
   $('optLogo').checked = state.settings.showLogo !== false;
@@ -1021,6 +1121,7 @@ function drawTimeline(follow = false) {
   const sx = tl.width / tlW, sy = tl.height / TL.h;
   const c = tl.getContext('2d');
   c.setTransform(1, 0, 0, 1, 0, 0);
+  c.clearRect(0, 0, tl.width, tl.height); // the static layer is transparent between bars: clear the old playhead
   c.drawImage(tlStatic, 0, 0);
   c.setTransform(sx, 0, 0, sy, 0, 0);
   const t = audio.currentTime || 0;
@@ -1852,6 +1953,9 @@ function bind() {
   bindSplitter($('splitL'), 'l'); bindSplitter($('splitR'), 'r'); bindSplitter($('splitB'), 'b');
   document.querySelectorAll('[data-panel-toggle]').forEach((b) => b.onclick = () => togglePanel(b.dataset.panelToggle));
   document.querySelectorAll('[data-panel-hide]').forEach((b) => b.onclick = () => togglePanel(b.dataset.panelHide, true));
+  $('btnMyLayout').onclick = saveMyLayout;
+  $('btnUseMyLayout').onclick = useMyLayout;
+  $('ctaText').addEventListener('input', (e) => { state.settings.cta = e.target.value; persist(); drawPreview(); });
   $('btnLayoutDefault').onclick = () => { ui = structuredClone(LAYOUT_DEFAULT); clampSizes(); applyLayout(); };
   window.addEventListener('resize', () => { clampSizes(); applyLayout(false); });
   // dictionary

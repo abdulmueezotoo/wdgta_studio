@@ -18,7 +18,7 @@ export const FORMATS = {
   '16x9': { id: '16x9', label: '16:9', name: 'Landscape', use: 'YouTube, Facebook, LinkedIn', w: 1920, h: 1080 },
 };
 
-export const ELEMENTS = { text: 'Words', logo: 'Logo', title: 'Title', handle: 'Handle', progress: 'Progress line', note: 'Marker note', chapter: 'Chapter label', badge: 'Capsule badge' };
+export const ELEMENTS = { text: 'Words', logo: 'Logo', title: 'Title', handle: 'Call to action', progress: 'Progress line', note: 'Marker note', chapter: 'Chapter label', badge: 'Capsule badge' };
 
 /**
  * Background themes. Dark backgrounds: white words, yellow key words.
@@ -46,10 +46,10 @@ const STOP = new Set(('a an and are as at be been but by can could did do does d
 
 /** Text shown on screen for a word. */
 export function displayWord(raw, upper = true) {
-  let s = String(raw).trim();
-  const q = /\?$/.test(s);
-  s = s.replace(/^[^\p{L}\p{N}]+/u, '').replace(/[^\p{L}\p{N}]+$/u, '');
-  if (q && s) s += '?';
+  // keep the punctuation the speaker's sentence needs (. , ? ! : ; ' " … and dashes inside words);
+  // drop only stray symbols the transcriber sometimes leaves on their own or at the edges
+  let s = String(raw).trim().replace(/^[-–—_*#~^|\\/]+/, '').replace(/[_*#~^|\\/]+$/, '');
+  if (!/[\p{L}\p{N}]/u.test(s)) return '';
   return upper ? s.toUpperCase() : s;
 }
 
@@ -193,11 +193,15 @@ export function defaultLayout(fmtId) {
   };
 }
 
+let userLayouts = {};
+/** Your own default positions (saved from a project you like); used wherever a project hasn't moved an element. */
+export function setUserLayouts(obj) { userLayouts = obj && typeof obj === 'object' ? obj : {}; }
 export function resolveLayout(fmtId, overrides) {
   const d = defaultLayout(fmtId);
+  const u = userLayouts[fmtId] || {};
   const o = overrides?.[fmtId] || {};
   const out = {};
-  for (const k of Object.keys(d)) out[k] = { ...d[k], ...(o[k] || {}) };
+  for (const k of Object.keys(d)) out[k] = { ...d[k], ...(u[k] || {}), ...(o[k] || {}) };
   return out;
 }
 
@@ -453,7 +457,7 @@ function drawBrand(ctx, fmt, t, style, theme, L, boxes) {
   if (style.handle !== false) {
     const p = L.handle; const px = setMono(p.s);
     ctx.fillStyle = theme.meta;
-    const x = p.x * W, y = p.y * H, txt = '@WEDEYGOTHROUGHAM';
+    const x = p.x * W, y = p.y * H, txt = String(style.cta || '@WEDEYGOTHROUGHAM').trim().toUpperCase();
     ctx.fillText(txt, x, y);
     boxes.handle = [x, y, ctx.measureText(txt).width, px * 1.2];
   }
