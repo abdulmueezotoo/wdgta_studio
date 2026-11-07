@@ -50,6 +50,7 @@ Projects auto-save in the browser, and **Save project** downloads a `.wdgta.json
 
 ### Editing on the video, call to action and your default layout
 
+- **Undo and redo** (top bar, or ⌘Z / ⇧⌘Z, Ctrl+Z / Ctrl+Y). Undo covers words, screens, yellow words, clips, chapters, slides, the title, design settings and where elements sit. A burst of typing or dragging counts as one step.
 - **Double-click the words on the video** to edit that screen in place. Press Enter to save or Esc to cancel. If you change the number of words, the screen's timing is shared out across the new words.
 - **Punctuation shows on the video** (commas, full stops, question marks, colons and so on), the way it appears in the transcript.
 - **Call to action.** Design → Call to action sets the line under the title (for example "Follow @wedeygothrougham for more"). Pick a preset or type your own. It can be moved and resized like any other element.

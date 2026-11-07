@@ -117,14 +117,66 @@ function badgeText() {
   if (b.show === false) return '';
   return b.kind === 'Custom' ? (b.custom || '') : `${b.kind || 'Capsule'} ${b.num || ''}`.trim();
 }
-function snapshot() {
-  undoStack.push(JSON.stringify({ cards: state.cards, clips: state.clips }));
-  if (undoStack.length > 60) undoStack.shift();
-  $('btnUndo').disabled = false;
+// ---------------- undo / redo ----------------
+// Every change that is saved becomes a step: words, screens, clips, chapters, slides, title,
+// design settings and element positions. Quick runs of changes (typing, dragging) merge into one step.
+let redoStack = [], histBase = null, histTimer = null, histMute = false;
+const HIST_MAX = 80;
+// fields starting with _ are worked out from the others (e.g. who is speaking), so they are left out
+const histState = () => JSON.stringify({ title: state.title, cards: state.cards, clips: state.clips, chapters: state.chapters, slides: state.slides, settings: state.settings }, (k, v) => (k[0] === '_' ? undefined : v));
+function commitHistory() {
+  clearTimeout(histTimer); histTimer = null;
+  if (histMute || !state.cards.length) return;
+  const cur = histState();
+  if (histBase === null || cur === histBase) { histBase = cur; updateUndoUI(); return; }
+  undoStack.push(histBase); if (undoStack.length > HIST_MAX) undoStack.shift();
+  histBase = cur; redoStack = [];
+  updateUndoUI();
+}
+/** Call before an edit: closes any step still being typed so the edit gets its own step. */
+function snapshot() { commitHistory(); }
+function resetHistory() { undoStack = []; redoStack = []; clearTimeout(histTimer); histTimer = null; histBase = state.cards.length ? histState() : null; updateUndoUI(); }
+function updateUndoUI() {
+  const u = $('btnUndo'), r = $('btnRedo');
+  if (u) u.disabled = !undoStack.length && !histTimer;
+  if (r) r.disabled = !redoStack.length;
+}
+function restoreHistory(json) {
+  const d = JSON.parse(json);
+  const logoBefore = state.settings.logo;
+  histMute = true;
+  state.title = d.title ?? state.title;
+  state.cards = d.cards; state.clips = d.clips || []; state.chapters = d.chapters || []; state.slides = d.slides || [];
+  state.settings = d.settings || state.settings;
+  sel = null;
+  $('projTitle').value = state.title;
+  applySettingsUI(); buildSwatches();
+  if (state.settings.logo !== logoBefore) setLogo(state.settings.logo);
+  changed(); updateElbar();
+  histMute = false;
+  histBase = json;
+  updateUndoUI();
+}
+function undo() {
+  commitHistory();
+  const prev = undoStack.pop();
+  if (!prev) return;
+  redoStack.push(histBase);
+  restoreHistory(prev);
+}
+function redo() {
+  commitHistory();
+  const next = redoStack.pop();
+  if (!next) return;
+  undoStack.push(histBase);
+  const keep = redoStack;
+  restoreHistory(next);
+  redoStack = keep; updateUndoUI();
 }
 let libTimer = null;
 function persist() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
+  if (!histMute && state.cards.length) { clearTimeout(histTimer); histTimer = setTimeout(commitHistory, 450); updateUndoUI(); }
   if (state.id && state.cards.length) {
     clearTimeout(libTimer);
     libTimer = setTimeout(flushSave, 700);
@@ -231,7 +283,6 @@ async function transcribe() {
       show($('job'), false);
       $('btnTranscribe').disabled = false;
       if (!m.words.length) { errorBox($('audioError'), 'No speech was found in this file.'); return; }
-      undoStack = [];
       const fixed = applyDictionary(m.words, dict);
       state.cards = buildCards(fixed.words, { keys: state.settings.maxKeys });
       state.clips = []; state.chapters = []; state.slides = [];
@@ -252,6 +303,7 @@ function setJob(text, frac) {
 
 // ---------------- workspace / words ----------------
 function enterWorkspace() {
+  resetHistory();
   show($('stepAudio'), false);
   show($('workspace'), true);
   show($('noAudio'), !audioFile);
@@ -376,15 +428,6 @@ function deleteWord() {
   else if (sel.w >= c.words.length) sel.w = c.words.length - 1;
   changed();
 }
-function undo() {
-  const s = undoStack.pop();
-  if (!s) return;
-  const d = JSON.parse(s);
-  state.cards = d.cards; state.clips = d.clips || state.clips;
-  sel = null;
-  $('btnUndo').disabled = !undoStack.length;
-  changed();
-}
 function regroup() {
   if (!state.cards.length) return; snapshot();
   state.cards = buildCards(allWords(), { keys: state.settings.maxKeys });
@@ -408,7 +451,6 @@ function replaceAll() {
       wd.w = repl + trail; wd.edited = true; n++;
     }
   }
-  if (!n) undoStack.pop();
   if (n && repl && $('replRemember').checked && !dict.some((d) => d.from.toLowerCase() === find.toLowerCase())) {
     dict.push({ from: find, to: repl }); saveDict(); renderDict();
   }
@@ -939,7 +981,6 @@ function loadState(data) {
   state.exportFmts = { ...state.exportFmts, ...(data.exportFmts || {}) };
   state.exportWhat = { full: true, ...(data.exportWhat || {}) };
   state.dest = data.dest === 'download' ? 'download' : 'folder';
-  undoStack = [];
   applySettingsUI();
   $('projTitle').value = state.title;
   buildTabs();
@@ -994,7 +1035,7 @@ function newProject() {
   if (musicBuf) clearMusicLocal();
   renderRecent();
   state.exportWhat = { full: true };
-  audioFile = null; audioBuf48 = null; sel = null; selEl = null; undoStack = [];
+  audioFile = null; audioBuf48 = null; sel = null; selEl = null; resetHistory();
   if (audioURL) URL.revokeObjectURL(audioURL); audioURL = null; audio.removeAttribute('src');
   $('projTitle').value = '';
   show($('dropFile'), false);
@@ -1915,6 +1956,7 @@ function bind() {
   $('wNote').addEventListener('change', () => renderCards());
   $('wNote').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); renderCards(); } });
   $('btnUndo').onclick = undo;
+  $('btnRedo').onclick = redo;
   $('btnRegroup').onclick = regroup;
   $('btnReplace').onclick = replaceAll;
 
@@ -2052,7 +2094,11 @@ function bind() {
   document.addEventListener('keydown', (e) => {
     if (currentModule !== 'studio') return;
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !typing) { e.preventDefault(); undo(); }
+    if ((e.ctrlKey || e.metaKey) && !typing && (e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) {
+      e.preventDefault();
+      if (e.key.toLowerCase() === 'y' || e.shiftKey) redo(); else undo();
+      return;
+    }
     if (e.code === 'Space' && !typing && !$('workspace').hidden) { e.preventDefault(); togglePlay(); }
     if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'm' && !$('workspace').hidden) { e.preventDefault(); toggleMute(); return; }
     if (e.altKey && ['Digit1', 'Digit2', 'Digit3'].includes(e.code)) { e.preventDefault(); togglePanel({ Digit1: 'tr', Digit2: 'tl', Digit3: 'ins' }[e.code]); return; }

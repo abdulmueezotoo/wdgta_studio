@@ -74,7 +74,7 @@ input[type=checkbox], input[type=radio] { accent-color: var(--yellow); }
 .module { padding: 6px 10px; border-radius: var(--radius); text-decoration: none; color: var(--muted); }
 .module.is-active { background: var(--hover); color: var(--text); font-weight: 600; }
 .module.is-later { color: var(--faint); cursor: default; }
-.topbar .proj-title { flex: 1 1 220px; min-width: 0; text-align: center; background: transparent; border: 1px solid transparent; color: var(--soft); font-weight: 500; }
+.topbar .proj-title { flex: 1 1 120px; min-width: 0; text-align: center; background: transparent; border: 1px solid transparent; color: var(--soft); font-weight: 500; }
 .topbar .proj-title:hover { border-color: var(--line); }
 .topbar .proj-title:focus { border-color: var(--line-2); color: var(--text); background: var(--deep); }
 .proj-title::placeholder { color: var(--faint); }
@@ -631,3 +631,8 @@ body:not([data-module="studio"]) .guests-only { display: block; }
 .word-editor-hint { position: absolute; z-index: 20; font-size: 11px; color: var(--soft); background: rgba(11, 11, 10, .85); padding: 3px 6px; border-radius: 3px; pointer-events: none; }
 .layout-defaults { margin-top: 8px; flex-wrap: wrap; }
 #ctaText { width: 100%; box-sizing: border-box; }
+
+/* ---------------- undo / redo ---------------- */
+.undo-group { display: flex; gap: 2px; background: var(--raise); border-radius: 6px; padding: 2px; }
+.undo-group .vt:disabled { opacity: .35; cursor: default; }
+.undo-group .vt { color: var(--soft); }
