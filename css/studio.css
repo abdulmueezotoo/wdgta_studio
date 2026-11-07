@@ -636,3 +636,22 @@ body:not([data-module="studio"]) .guests-only { display: block; }
 .undo-group { display: flex; gap: 2px; background: var(--raise); border-radius: 6px; padding: 2px; }
 .undo-group .vt:disabled { opacity: .35; cursor: default; }
 .undo-group .vt { color: var(--soft); }
+
+/* ---------------- word tools as icons ---------------- */
+.wordbar { flex-direction: column; align-items: stretch; gap: 6px; }
+.wb-edit { display: flex; gap: 4px; }
+.wb-edit input { flex: 1 1 auto; min-width: 0; }
+.wb-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+.wb-sep { width: 1px; height: 20px; background: var(--line-2); margin: 0 3px; }
+.ib { width: 34px; height: 34px; display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--line-2); border-radius: var(--radius); background: var(--panel); color: var(--soft); cursor: pointer; }
+.ib:hover:not(:disabled) { color: var(--text); border-color: var(--muted); background: var(--hover); }
+.ib:focus-visible { outline: 2px solid var(--yellow); outline-offset: 1px; }
+.ib:disabled { opacity: .3; cursor: default; }
+.ib-primary { background: var(--yellow); border-color: var(--yellow); color: #0B0B0A; }
+.ib-primary:hover:not(:disabled) { background: #FFD54A; border-color: #FFD54A; color: #0B0B0A; }
+.ib-danger { color: #F08A6C; }
+.ib-danger:hover:not(:disabled) { color: #fff; background: #8E2E16; border-color: var(--marker); }
+.ib-swatch { width: 16px; height: 16px; border-radius: 2px; box-shadow: inset 0 0 0 2px var(--yellow); }
+.ib-yellow[aria-pressed="true"] { border-color: var(--yellow); }
+.ib-yellow[aria-pressed="true"] .ib-swatch { background: var(--yellow); }
+.wb-tools .wordbar-time { margin-left: auto; }

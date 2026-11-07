@@ -357,7 +357,9 @@ function updateWordbar() {
   if (!on) { sel = null; return; }
   const c = state.cards[sel.c], wd = c.words[sel.w];
   if (document.activeElement !== $('wordText')) $('wordText').value = wd.w;
-  $('wKey').textContent = c.keys.includes(sel.w) ? 'Remove yellow' : 'Make yellow';
+  const isKey = c.keys.includes(sel.w);
+  $('wKey').setAttribute('aria-pressed', String(isKey));
+  $('wKey').title = isKey ? 'Yellow word: click to make it white again (Y)' : 'Make this word yellow (Y)';
   $('wSplit').disabled = sel.w === 0;
   $('wJoin').disabled = sel.c === 0;
   $('wTime').textContent = `${fmtTime(wd.s, true)} – ${fmtTime(wd.e, true)}`;
