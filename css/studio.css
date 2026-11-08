@@ -688,6 +688,6 @@ body:not([data-module="studio"]) .guests-only { display: block; }
 .pk-summary b { color: var(--text); }
 .pk-back { align-self: flex-start; }
 /* seven inspector tabs: let them scroll sideways instead of clipping */
-.tabs { overflow-x: auto; scrollbar-width: none; }
+.tabs { overflow-x: auto; overflow-y: hidden; flex-shrink: 0; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs button { flex: 1 0 auto; padding-inline: 7px; white-space: nowrap; }
