@@ -193,6 +193,7 @@
         <button type="button" role="tab" data-tab="marker" aria-selected="false">Marker</button>
         <button type="button" role="tab" data-tab="clips" aria-selected="false">Clips</button>
         <button type="button" role="tab" data-tab="carousel" aria-selected="false">Carousel</button>
+        <button type="button" role="tab" data-tab="pack" aria-selected="false">Pack</button>
         <button type="button" role="tab" data-tab="export" aria-selected="false">Export</button>
       </div>
 
@@ -386,7 +387,10 @@
           <label class="row-field">Series
             <select id="cSeries"></select>
           </label>
-          <p class="hint">4:5 slides (1080×1350) in the project's background colour. Wrap words in *stars* to make them yellow. Click a slide to preview it.</p>
+          <div class="row-field"><span>Background</span>
+            <div class="slide-bgs" id="slideBgs" role="radiogroup" aria-label="Background for quotes, points and carousel"></div>
+          </div>
+          <p class="hint">4:5 slides (1080×1350). Wrap words in *stars* to highlight them. Tick "Own post" on a quote or point to also post it on its own (4:5 and 9:16). Click a slide to preview it.</p>
           <div class="btn-row">
             <button class="btn small ghost" type="button" data-add="cover">+ Cover</button>
             <button class="btn small ghost" type="button" data-add="quote">+ Quote</button>
@@ -400,6 +404,67 @@
           <button class="btn small ghost" id="cPrevExit" type="button" hidden>Back to video</button>
         </div>
         <p class="hint" id="cHint"></p>
+      </div>
+
+      <div class="tabpanel pack-panel" data-panel="pack" hidden>
+        <div class="group">
+          <label class="label" for="pkFolder">Episode folder</label>
+          <input type="text" id="pkFolder" autocomplete="off">
+          <p class="hint" id="pkFolderHint">Everything is saved in a folder with this name, inside a folder you choose on this computer.</p>
+        </div>
+        <button class="btn small ghost pk-back" id="pkPrevExit" type="button" hidden>Back to video</button>
+
+        <section class="group pk-sec" aria-labelledby="pkClipsH">
+          <div class="pk-head"><h3 class="label" id="pkClipsH">Clips <span class="pk-count mono" id="pkClipCount"></span></h3>
+            <button class="btn small ghost" id="pkSugClips" type="button">Suggest</button></div>
+          <p class="hint">9:16 (TikTok, Reels, Shorts, Facebook Reels) and 4:5 (feeds, LinkedIn). Aim for 5–10. Make your own in the Clips tab.</p>
+          <ol class="pk-list" id="pkClips"></ol>
+        </section>
+
+        <section class="group pk-sec" aria-labelledby="pkQuotesH">
+          <div class="pk-head"><h3 class="label" id="pkQuotesH">Quotes <span class="pk-count mono" id="pkQuoteCount"></span></h3>
+            <button class="btn small ghost" id="pkAddQuote" type="button">Add</button>
+            <button class="btn small ghost" id="pkSugQuotes" type="button">Suggest</button></div>
+          <p class="hint">Single posts in 4:5 and 9:16. Edit the words right here.</p>
+          <ol class="pk-list" id="pkQuotes"></ol>
+        </section>
+
+        <section class="group pk-sec" aria-labelledby="pkPointsH">
+          <div class="pk-head"><h3 class="label" id="pkPointsH">Points <span class="pk-count mono" id="pkPointCount"></span></h3>
+            <button class="btn small ghost" id="pkAddPoint" type="button">Add</button>
+            <button class="btn small ghost" id="pkSugPoints" type="button">Suggest</button></div>
+          <p class="hint">Takeaways in your words. Single posts, and pages of the carousel.</p>
+          <ol class="pk-list" id="pkPoints"></ol>
+        </section>
+
+        <section class="group pk-sec" aria-labelledby="pkCarH">
+          <div class="pk-head"><h3 class="label" id="pkCarH">Carousel and full episode</h3></div>
+          <label class="check"><input type="checkbox" id="pkCarousel"> <span id="pkCarLabel">Carousel</span></label>
+          <label class="check"><input type="checkbox" id="pkFull"> Full episode · 16:9 for YouTube, with subtitles</label>
+        </section>
+
+        <section class="group pk-sec" aria-labelledby="pkCapH">
+          <div class="pk-head"><h3 class="label" id="pkCapH">Captions</h3></div>
+          <label class="gf"><span>Hashtags on every post</span><input type="text" id="pkTags" autocomplete="off"></label>
+          <label class="gf"><span>Calls to action (one per line)</span><textarea id="pkCtas" rows="2"></textarea></label>
+          <ol class="pk-steps">
+            <li><button class="btn small" id="pkCopy" type="button">Copy for Claude</button> then paste it into Claude.</li>
+            <li>Paste Claude's whole reply here:</li>
+          </ol>
+          <textarea id="pkReply" rows="4" placeholder="### C1&#10;Instagram: …"></textarea>
+          <p class="hint" id="pkCapStatus">No reply yet: the document will use simple template captions.</p>
+        </section>
+
+        <div class="group pk-go">
+          <p class="pk-summary" id="pkSummary"></p>
+          <div class="btn-row">
+            <button class="btn primary" id="pkExport" type="button">Export pack</button>
+            <button class="btn ghost" id="pkCancel" type="button" hidden>Cancel</button>
+          </div>
+          <div class="bar" hidden id="pkBarWrap"><span id="pkBar"></span></div>
+          <p class="hint" id="pkHint"></p>
+          <p class="error" id="pkError" role="alert" hidden></p>
+        </div>
       </div>
 
       <div class="tabpanel" data-panel="export" hidden>
@@ -425,8 +490,8 @@
         </div>
         <div class="group pack">
           <span class="label">Weekly pack</span>
-          <p class="hint">One click: the full recording in 16:9, every clip in 9:16, the carousel slides and all subtitles, into one folder.</p>
-          <button class="btn" id="btnPack" type="button">Export weekly pack</button>
+          <p class="hint">Clips, quotes, points, carousel, full episode and a captions document, in one episode folder.</p>
+          <button class="btn" id="btnPack" type="button">Open the Pack tab</button>
         </div>
         <button class="btn small ghost" id="btnStill" type="button">Save current frame as image</button>
         <div class="bar" hidden id="exBarWrap"><span id="exBar"></span></div>

@@ -56,6 +56,25 @@ Projects auto-save in the browser, and **Save project** downloads a `.wdgta.json
 - **Call to action.** Design → Call to action sets the line under the title (for example "Follow @wedeygothrougham for more"). Pick a preset or type your own. It can be moved and resized like any other element.
 - **My default layout.** Arrange a project the way you like, then press Design → **Make this my default layout**. Every project then starts with that layout, in every format. **Reset to my default** brings an existing project back in line.
 
+## Weekly pack (Pack tab)
+
+The **Pack** tab gathers a week of posts for one episode. **Export pack** saves them on this computer, in a folder named after the episode, inside a folder you choose.
+
+- **Clips (aim for 5–10).** Every clip you made in the Clips tab is listed and marked *yours*. **Suggest** adds strong moments that aren't already clipped, marked *suggested*. Untick a clip to leave it out, give it a title, play it, or remove a suggested one. Each clip is exported in 9:16 (TikTok, Reels, Shorts, Facebook Reels) and 4:5 (Instagram and Facebook feed, LinkedIn), with subtitles.
+- **Quotes and points.** These are single posts, exported in 4:5 and 9:16 (Stories and Status). **Suggest** finds stand-alone sentences for quotes; for points it uses chapter names and advice-like lines. **Add** makes a blank one. You can edit the words right in the list. Points can also be carousel pages.
+- **Carousel.** The slides ticked "In carousel", saved as 4:5 images plus `carousel-linkedin.pdf` for LinkedIn document posts.
+- **Full episode** in 16:9 for YouTube, with subtitles. It's made last, so the short pieces are ready first.
+- **Backgrounds.** Quotes, points and carousel slides sit on Ink, Black or White (Carousel tab → Background). Yellow is only an accent there.
+- **Captions.** Set your hashtags and calls to action, then press **Copy for Claude**, paste the prompt into Claude, and paste the reply back. `Captions.docx` lists every post with its files and a caption for each platform: Instagram, TikTok, YouTube, Facebook and LinkedIn. `Posting plan.csv` has the same in a spreadsheet. Any post without a caption from Claude gets a simple template caption.
+
+Folder layout:
+
+```
+<Episode title>/
+  Captions.docx, Posting plan.csv
+  01 Full episode/   02 Clips/   03 Quotes/   04 Points/   05 Carousel/
+```
+
 ## Home
 
 The app opens on **Home** (`#home`). Everything on it is read live from the other modules:

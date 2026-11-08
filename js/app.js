@@ -14,8 +14,13 @@ import {
 } from './library.js';
 import {
   DEFAULT_DICTIONARY, applyDictionary, subtitleCues, toSRT, toVTT, CHAPTER_PRESETS, youtubeChapters,
-  assignSpeakers, findHighlights, captionPrompt, speechRanges, isSpeaking, SLIDE_TYPES, SERIES, drawSlide,
+  assignSpeakers, findHighlights, captionPrompt, speechRanges, isSpeaking, SLIDE_TYPES, SERIES, drawSlide, SLIDE_BGS,
 } from './features.js';
+import {
+  PACK_DEFAULTS, SIZES, folderName, suggestPackClips, suggestQuotes, suggestPoints, packPosts, captionsPrompt, parseCaptions,
+  fullCaptions, captionsDocx, postingPlanCSV, imagesToPdf,
+} from './pack.js';
+import { episodesData, episodeTitle } from './episodes.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'wdgta-studio:last-project';
@@ -466,7 +471,7 @@ const canvas = $('canvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 let pScale = 0.5, lastBoxes = {};
 function isFull() { return document.fullscreenElement === $('stage'); }
-function previewFmt() { return previewMode && previewMode.kind === 'slide' ? { id: 'slide', w: 1080, h: 1350 } : FORMATS[state.fmt]; }
+function previewFmt() { return previewMode && previewMode.kind === 'slide' ? { id: 'slide', w: 1080, h: previewMode.size === '9x16' ? 1920 : 1350 } : FORMATS[state.fmt]; }
 function resizeCanvas() {
   const f = previewFmt();
   const cap = isFull() ? Math.max(screen.width, screen.height) : 720;
@@ -1061,7 +1066,9 @@ function buildSwatches() {
 
 // ---------------- inspector tabs ----------------
 function setTab(name) {
-  if (name !== 'carousel' && previewMode && previewMode.kind === 'slide') exitPreviewMode();
+  if (name !== 'carousel' && name !== 'pack' && previewMode && previewMode.kind === 'slide') exitPreviewMode();
+  if (name === 'pack') renderPack();
+  if (name === 'carousel') { renderSlides(); renderSlideBgs(); }
   document.querySelectorAll('#insTabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
   document.querySelectorAll('.tabpanel').forEach((p) => { p.hidden = p.dataset.panel !== name; });
 }
@@ -1387,8 +1394,11 @@ function drawPreviewMode() {
   if (m.kind === 'slide') {
     const i = state.slides.findIndex((x) => x.id === m.id);
     if (i < 0) return exitPreviewMode();
-    ctx.setTransform(canvas.width / 1080, 0, 0, canvas.height / 1350, 0, 0);
-    drawSlide(ctx, state.slides[i], i, state.slides.length, deck());
+    const sl = state.slides[i];
+    numberPoints();
+    ctx.setTransform(canvas.width / 1080, 0, 0, canvas.height / (m.size === '9x16' ? 1920 : 1350), 0, 0);
+    if (m.single) drawSlide(ctx, { ...sl, num: sl.soloNum || 1 }, 0, 1, deck({ single: true, size: m.size, cta: packCtas()[0] }));
+    else { const car = carouselSlides(); const ci = car.indexOf(sl); drawSlide(ctx, sl, Math.max(0, ci), Math.max(1, car.length), deck()); }
     return;
   }
   const f = FORMATS[state.fmt];
@@ -1398,7 +1408,7 @@ function drawPreviewMode() {
 }
 function exitPreviewMode() {
   previewMode = null;
-  show($('cPrevExit'), false);
+  show($('cPrevExit'), false); show($('pkPrevExit'), false);
   document.querySelectorAll('.slide-list li.is-sel').forEach((li) => li.classList.remove('is-sel'));
   resizeCanvas();
 }
@@ -1482,8 +1492,14 @@ function renderHighlights() {
 }
 
 // ---------------- carousel ----------------
-function deck() {
-  return { series: state.series === 'Quote' ? '' : state.series, bg: state.settings.bg, logo: logoImg, logoLight, logoDark, upper: state.settings.upper, badge: badgeText() };
+function deck(extra = {}) {
+  return { series: state.series === 'Quote' ? '' : state.series, slideBg: state.settings.slideBg || 'ink', logo: logoImg, logoLight, logoDark, upper: state.settings.upper, badge: badgeText(), ...extra };
+}
+const carouselSlides = () => state.slides.filter((s) => s.inCarousel !== false);
+/** Number the points: in the carousel by their place among carousel points, on their own by their place among single points. */
+function numberPoints() {
+  let n = 0; carouselSlides().forEach((s) => { if (s.type === 'point') s.num = ++n; });
+  let k = 0; state.slides.forEach((s) => { if (s.type === 'point' && s.solo) s.soloNum = ++k; });
 }
 function sentenceAt(ci, wi) {
   const words = allWords();
@@ -1500,9 +1516,9 @@ function addSlide(type, text = '', sub = '') {
   if (type === 'cover') state.slides.unshift(s); else if (type !== 'end' && state.slides.length && state.slides[state.slides.length - 1].type === 'end') state.slides.splice(state.slides.length - 1, 0, s); else state.slides.push(s);
   persist(); renderSlides(); previewSlide(s.id);
 }
-function previewSlide(id) {
-  previewMode = { kind: 'slide', id };
-  show($('cPrevExit'), true);
+function previewSlide(id, opts = {}) {
+  previewMode = { kind: 'slide', id, ...opts };
+  show($('cPrevExit'), true); show($('pkPrevExit'), true);
   audio.pause();
   resizeCanvas();
   document.querySelectorAll('.slide-list li').forEach((li) => li.classList.toggle('is-sel', li.dataset.id === id));
@@ -1510,9 +1526,8 @@ function previewSlide(id) {
 function renderSlides() {
   const ol = $('slideList');
   if (!state.slides.length) { ol.innerHTML = '<li class="clip-empty">No slides yet. Start with a cover, or click a word in the transcript and press "Add to carousel".</li>'; return; }
-  let pointNo = 0;
+  numberPoints();
   ol.replaceChildren(...state.slides.map((sl, i) => {
-    if (sl.type === 'point') sl.num = ++pointNo;
     const li = document.createElement('li'); li.dataset.id = sl.id;
     if (previewMode && previewMode.kind === 'slide' && previewMode.id === sl.id) li.classList.add('is-sel');
     const head = document.createElement('div'); head.className = 'slide-head';
@@ -1533,26 +1548,373 @@ function renderSlides() {
     const sub = document.createElement('input'); sub.type = 'text'; sub.value = sl.sub || '';
     sub.placeholder = { cover: 'Line under the headline (optional)', quote: 'Who said it', point: 'Explanation (optional)', end: 'Follow @wedeygothrougham for more founder decisions.' }[sl.type];
     sub.oninput = () => { sl.sub = sub.value; persist(); if (previewMode?.id === sl.id) drawPreview(); };
-    li.addEventListener('focusin', () => { if (!(previewMode && previewMode.id === sl.id)) previewSlide(sl.id); });
-    li.addEventListener('click', () => { if (!(previewMode && previewMode.id === sl.id)) previewSlide(sl.id); });
+    const showIt = () => { if (!(previewMode && previewMode.id === sl.id && !previewMode.single)) previewSlide(sl.id); };
+    li.addEventListener('focusin', showIt);
+    li.addEventListener('click', showIt);
     li.append(head, txt, sub);
+    if (sl.type === 'quote' || sl.type === 'point') {
+      const opts = document.createElement('div'); opts.className = 'slide-opts';
+      const box = (label, on, fn) => { const l = document.createElement('label'); l.className = 'check'; const c = document.createElement('input'); c.type = 'checkbox'; c.checked = on; c.onchange = () => { fn(c.checked); persist(); renderSlides(); }; l.append(c, ' ' + label); return l; };
+      opts.append(box('In carousel', sl.inCarousel !== false, (v) => { sl.inCarousel = v; }), box('Own post', !!sl.solo, (v) => { sl.solo = v; }));
+      li.appendChild(opts);
+    }
+    if (sl.inCarousel === false) li.classList.add('not-in-carousel');
     return li;
   }));
 }
 async function exportSlides() {
-  if (!state.slides.length) { $('cHint').textContent = 'Add some slides first.'; return; }
+  const slides = carouselSlides();
+  if (!slides.length) { $('cHint').textContent = 'Add some slides first (or tick "In carousel").'; return; }
   await loadFonts();
   let dir = null;
   try { dir = await pickFolder(); } catch (e) { if (e.name === 'AbortError') return; }
   const base = slug((state.series || 'carousel') + ' ' + (state.title || ''));
-  for (let i = 0; i < state.slides.length; i++) {
-    let pointNo = 0; state.slides.forEach((s) => { if (s.type === 'point') s.num = ++pointNo; });
-    const blob = await renderSlide(state.slides[i], i, state.slides.length, deck());
+  numberPoints();
+  for (let i = 0; i < slides.length; i++) {
+    const blob = await renderSlide(slides[i], i, slides.length, deck());
     const name = `${base}_${String(i + 1).padStart(2, '0')}.png`;
     if (dir) { const w = await (await dir.getFileHandle(name, { create: true })).createWritable(); await w.write(blob); await w.close(); }
     else triggerDownload(blob, name);
   }
-  $('cHint').textContent = `Saved ${state.slides.length} slides${dir ? ' to the folder you chose' : ''}. Post them in order as one carousel.`;
+  $('cHint').textContent = `Saved ${slides.length} slides${dir ? ' to the folder you chose' : ''}. Post them in order as one carousel.`;
+}
+
+// ---------------- slide backgrounds (quotes, points, carousel) ----------------
+function renderSlideBgs() {
+  const cur = state.settings.slideBg || 'ink';
+  $('slideBgs').replaceChildren(...Object.entries(SLIDE_BGS).map(([id, t]) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'swatch slide-bg';
+    b.style.background = t.bg; b.title = t.name; b.setAttribute('aria-label', t.name);
+    b.setAttribute('role', 'radio'); b.setAttribute('aria-checked', String(id === cur));
+    b.onclick = () => { state.settings.slideBg = id; persist(); renderSlideBgs(); if (previewMode?.kind === 'slide') drawPreview(); };
+    return b;
+  }));
+}
+
+// ---------------- weekly pack ----------------
+function pk() {
+  if (!state.settings.pack) state.settings.pack = JSON.parse(JSON.stringify(PACK_DEFAULTS));
+  for (const [k, v] of Object.entries(PACK_DEFAULTS)) if (!(k in state.settings.pack)) state.settings.pack[k] = v;
+  return state.settings.pack;
+}
+const packCtas = () => String(pk().ctas || '').split('\n').map((x) => x.trim()).filter(Boolean);
+let packEpisodeTitle = '';
+async function refreshPackTitle() {
+  try {
+    const eps = await episodesData({});
+    const e = eps.find((x) => x.studioProject && x.studioProject === state.id);
+    packEpisodeTitle = e ? episodeTitle(e) : '';
+  } catch { packEpisodeTitle = ''; }
+}
+const packTitle = () => pk().folder || packEpisodeTitle || state.title || 'WDGTA episode';
+function packPlan() {
+  const cfg = pk();
+  numberPoints();
+  const clips = state.clips.filter((c) => c.pack !== false).sort((a, b) => a.start - b.start);
+  const quotes = state.slides.filter((s) => s.type === 'quote' && s.solo);
+  const points = state.slides.filter((s) => s.type === 'point' && s.solo);
+  const car = cfg.carousel ? carouselSlides() : [];
+  const base = slug(state.title || 'episode');
+  const files = {};
+  const use = (fmt, list) => list.find((x) => x.fmt === fmt).use;
+  if (cfg.full) files.FULL = [{ path: `01 Full episode/${base}_16x9.mp4`, use: 'YouTube' }, { path: `01 Full episode/${base}.srt`, use: 'YouTube subtitles' }];
+  clips.forEach((c, i) => {
+    const n = String(i + 1).padStart(2, '0'), nm = slug(c.title || c.name || 'clip');
+    files[`C${i + 1}`] = SIZES.clip.map((z) => ({ path: `02 Clips/${n}-${nm}_${z.fmt}.mp4`, use: use(z.fmt, SIZES.clip), fmt: z.fmt }));
+  });
+  quotes.forEach((q, i) => { files[`Q${i + 1}`] = SIZES.still.map((z) => ({ path: `03 Quotes/quote-${String(i + 1).padStart(2, '0')}_${z.fmt}.png`, use: z.use, fmt: z.fmt })); });
+  points.forEach((q, i) => { files[`P${i + 1}`] = SIZES.still.map((z) => ({ path: `04 Points/point-${String(i + 1).padStart(2, '0')}_${z.fmt}.png`, use: z.use, fmt: z.fmt })); });
+  if (car.length) files.CAR = [{ path: `05 Carousel/slide-01…${String(car.length).padStart(2, '0')}.png`, use: 'Instagram & Facebook carousel (post in order)' }, { path: '05 Carousel/carousel-linkedin.pdf', use: 'LinkedIn document post' }];
+  const posts = packPosts({ title: packTitle(), clips, slides: state.slides, cards: state.cards, cfg, chapters: state.chapters, duration: totalDur(), files });
+  const videoSecs = (cfg.full ? totalDur() : 0) + clips.reduce((a, c) => a + (c.end - c.start) * SIZES.clip.length, 0);
+  const nFiles = Object.values(files).reduce((a, f) => a + f.length, 0) + (car.length ? car.length - 1 : 0) + 2;
+  return { cfg, clips, quotes, points, car, files, posts, videoSecs, nFiles, folder: folderName(packTitle()) };
+}
+const capCtx = () => ({ title: packTitle(), cfg: pk(), guest: state.settings.names?.guest || '' });
+
+function packRow({ on, onToggle, tag, body, actions = [] }) {
+  const li = document.createElement('li');
+  li.className = 'pk-row' + (on ? '' : ' is-off');
+  const c = document.createElement('input'); c.type = 'checkbox'; c.checked = on; c.setAttribute('aria-label', 'Include in the pack');
+  c.onchange = () => onToggle(c.checked);
+  const main = document.createElement('div'); main.className = 'pk-main';
+  main.append(...body);
+  const side = document.createElement('div'); side.className = 'pk-side';
+  if (tag) { const t = document.createElement('span'); t.className = 'tag ' + (tag === 'yours' ? 'is-yours' : 'is-sug'); t.textContent = tag; side.appendChild(t); }
+  side.append(...actions);
+  li.append(c, main, side);
+  return li;
+}
+function iconBtn(label, glyph, fn) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'x-btn'; b.title = label; b.setAttribute('aria-label', label); b.textContent = glyph;
+  b.onclick = (e) => { e.stopPropagation(); fn(); }; return b;
+}
+function slideRows(type) {
+  const list = state.slides.filter((s) => s.type === type);
+  if (!list.length) return [Object.assign(document.createElement('li'), { className: 'clip-empty', textContent: type === 'quote' ? 'No quotes yet. Press Suggest, Add, or use the carousel icon on any word.' : 'No points yet. Press Suggest or Add.' })];
+  return list.map((sl) => {
+    const txt = document.createElement('textarea'); txt.rows = 2; txt.value = sl.text; txt.setAttribute('aria-label', type === 'quote' ? 'Quote' : 'Point');
+    txt.oninput = () => { sl.text = txt.value; persist(); if (previewMode?.id === sl.id) drawPreview(); };
+    const sub = document.createElement('input'); sub.type = 'text'; sub.value = sl.sub || ''; sub.placeholder = type === 'quote' ? 'Who said it' : 'Explanation (optional)';
+    sub.oninput = () => { sl.sub = sub.value; persist(); if (previewMode?.id === sl.id) drawPreview(); };
+    const focus = () => { if (!(previewMode?.id === sl.id)) previewSlide(sl.id, { single: true, size: '4x5' }); };
+    txt.addEventListener('focus', focus); sub.addEventListener('focus', focus);
+    const body = [txt, sub];
+    if (type === 'point') {
+      const l = document.createElement('label'); l.className = 'check small'; const c = document.createElement('input'); c.type = 'checkbox'; c.checked = sl.inCarousel !== false;
+      c.onchange = () => { sl.inCarousel = c.checked; persist(); renderPack(); }; l.append(c, ' Also a carousel page'); body.push(l);
+    }
+    const actions = [
+      iconBtn('Preview 4:5', '4:5', () => previewSlide(sl.id, { single: true, size: '4x5' })),
+      iconBtn('Preview 9:16', '9:16', () => previewSlide(sl.id, { single: true, size: '9x16' })),
+      iconBtn('Remove', '×', () => { snapshot(); state.slides = state.slides.filter((x) => x !== sl); if (previewMode?.id === sl.id) exitPreviewMode(); persist(); renderPack(); }),
+    ];
+    return packRow({ on: !!sl.solo, onToggle: (v) => { sl.solo = v; persist(); renderPack(); }, tag: sl.suggested ? 'suggested' : 'yours', body, actions });
+  });
+}
+function renderPack() {
+  if ($('pkFolder') == null) return;
+  const cfg = pk();
+  refreshPackTitle().then(() => { $('pkFolder').placeholder = packEpisodeTitle || state.title || 'Episode title'; packSummary(); });
+  if (document.activeElement !== $('pkFolder')) $('pkFolder').value = cfg.folder || '';
+  $('pkFull').checked = !!cfg.full; $('pkCarousel').checked = !!cfg.carousel;
+  if (document.activeElement !== $('pkTags')) $('pkTags').value = cfg.hashtags;
+  if (document.activeElement !== $('pkCtas')) $('pkCtas').value = cfg.ctas;
+  if (document.activeElement !== $('pkReply')) $('pkReply').value = cfg.reply || '';
+  // clips
+  const clips = [...state.clips].sort((a, b) => a.start - b.start);
+  $('pkClips').replaceChildren(...(clips.length ? clips.map((c) => {
+    const name = document.createElement('input'); name.type = 'text'; name.value = c.title || c.name || ''; name.setAttribute('aria-label', 'Clip title');
+    name.oninput = () => { c.title = name.value; persist(); };
+    const meta = document.createElement('span'); meta.className = 'mono pk-meta'; meta.textContent = `${fmtTime(c.start)}–${fmtTime(c.end)} · ${Math.round(c.end - c.start)} s`;
+    const actions = [iconBtn('Play this clip', '▶', () => { if (!audioFile) return; exitPreviewMode(); playClip = c; audio.currentTime = c.start; audio.play(); requestAnimationFrame(tick); })];
+    if (c.suggested) actions.push(iconBtn('Remove', '×', () => { snapshot(); state.clips = state.clips.filter((x) => x !== c); delete state.exportWhat[c.id]; changed(); renderPack(); }));
+    return packRow({ on: c.pack !== false, onToggle: (v) => { c.pack = v; persist(); renderPack(); }, tag: c.suggested ? 'suggested' : 'yours', body: [name, meta], actions });
+  }) : [Object.assign(document.createElement('li'), { className: 'clip-empty', textContent: 'No clips yet. Press Suggest, or make them in the Clips tab.' })]));
+  $('pkQuotes').replaceChildren(...slideRows('quote'));
+  $('pkPoints').replaceChildren(...slideRows('point'));
+  const plan = packPlan();
+  $('pkClipCount').textContent = `${plan.clips.length} in pack`;
+  $('pkQuoteCount').textContent = `${plan.quotes.length} in pack`;
+  $('pkPointCount').textContent = `${plan.points.length} in pack`;
+  const n = carouselSlides().length;
+  $('pkCarLabel').textContent = n ? `Carousel · ${n} slide${n === 1 ? '' : 's'} as 4:5 images and a PDF for LinkedIn` : 'Carousel · no slides yet (points ticked "Also a carousel page" go here)';
+  readReply(false);
+  packSummary(plan);
+}
+function packSummary(plan = packPlan()) {
+  const bits = [plan.clips.length && `${plan.clips.length} clip${plan.clips.length > 1 ? 's' : ''}`, plan.quotes.length && `${plan.quotes.length} quote${plan.quotes.length > 1 ? 's' : ''}`, plan.points.length && `${plan.points.length} point${plan.points.length > 1 ? 's' : ''}`, plan.car.length && 'carousel', plan.cfg.full && 'full episode'].filter(Boolean);
+  const warn = plan.clips.length && (plan.clips.length < 5 || plan.clips.length > 10) ? ` The plan is 5–10 clips; you have ${plan.clips.length}.` : '';
+  $('pkSummary').innerHTML = bits.length
+    ? `<b>${bits.join(' · ')}</b><br>About ${plan.nFiles} files into “${plan.folder}”, with ${Math.round(plan.videoSecs / 60)} min of video to render. Short pieces are made first, the full episode last.${warn}`
+    : 'Nothing is ticked yet.';
+}
+function readReply(save = true) {
+  const cfg = pk();
+  const plan = packPlan();
+  if (save) { cfg.reply = $('pkReply').value; persist(); }
+  if (!cfg.reply.trim()) { $('pkCapStatus').textContent = 'No reply yet: the document will use simple template captions.'; return null; }
+  const parsed = parseCaptions(cfg.reply, plan.posts);
+  const got = plan.posts.filter((p) => parsed[p.id] && Object.keys(parsed[p.id]).length).length;
+  $('pkCapStatus').textContent = got
+    ? `Captions from Claude for ${got} of ${plan.posts.length} posts.${got < plan.posts.length ? ' The rest use templates. If you changed the pack after copying, copy again.' : ''}`
+    : 'Could not find the posts in that reply. Paste Claude’s whole reply, starting with the first “###” line.';
+  return parsed;
+}
+async function copyPackPrompt() {
+  await refreshPackTitle();
+  const plan = packPlan();
+  if (!plan.posts.length) { $('pkCapStatus').textContent = 'Tick something to post first.'; return; }
+  const text = captionsPrompt({ title: packTitle(), guest: state.settings.names?.guest, host: state.settings.names?.host, posts: plan.posts, cfg: plan.cfg });
+  try { await navigator.clipboard.writeText(text); $('pkCapStatus').textContent = `Copied the prompt for ${plan.posts.length} posts. Paste it into Claude, then paste the reply below.`; }
+  catch { $('pkReply').value = text; $('pkCapStatus').textContent = 'Could not copy automatically; the prompt is in the box above. Copy it from there.'; }
+}
+function suggestMoreClips() {
+  if (!state.cards.length) return;
+  const cfg = pk();
+  const inPack = state.clips.filter((c) => c.pack !== false).length;
+  const want = inPack >= 10 ? 0 : inPack >= cfg.clipTarget ? Math.min(2, 10 - inPack) : cfg.clipTarget - inPack;
+  if (!want) { $('pkHint').textContent = 'You already have 10 clips in the pack.'; return; }
+  const add = suggestPackClips(state.cards, state.clips, want, cfg.clipLen || 45);
+  if (!add.length) { $('pkHint').textContent = 'No more strong moments found outside your clips. Make one by hand in the Clips tab.'; return; }
+  snapshot();
+  add.forEach((h, i) => { const c = { id: uid(), name: `Clip ${state.clips.length + 1}`, title: '', start: h.start, end: h.end, suggested: true, pack: true }; state.clips.push(c); state.exportWhat[c.id] = true; });
+  state.clips.sort((a, b) => a.start - b.start);
+  changed(); renderPack();
+  $('pkHint').textContent = `Added ${add.length} suggested clip${add.length > 1 ? 's' : ''}. Play them, give them titles, untick or remove any that miss.`;
+}
+function insertSlide(sl) {
+  const endIdx = state.slides.findIndex((x) => x.type === 'end');
+  if (endIdx >= 0) state.slides.splice(endIdx, 0, sl); else state.slides.push(sl);
+}
+function ensureCoverAndEnd() {
+  if (!state.slides.some((x) => x.type === 'cover')) state.slides.unshift({ id: uid(), type: 'cover', text: state.title || 'Before you build', sub: '', suggested: true });
+  if (!state.slides.some((x) => x.type === 'end')) state.slides.push({ id: uid(), type: 'end', text: '', sub: '', suggested: true });
+}
+function suggestMore(type) {
+  if (!state.cards.length) return;
+  const have = state.slides.filter((s) => s.type === type);
+  const target = type === 'quote' ? 5 : 4;
+  const want = Math.max(type === 'quote' ? 3 : 2, target - have.filter((s) => s.solo).length);
+  const names = state.settings.names || {};
+  const found = type === 'quote'
+    ? suggestQuotes(state.cards, state.slides.filter((s) => s.type === 'quote' || s.type === 'point').map((s) => s.text), want).map((q) => ({ text: q.text, sub: q.spk === 'guest' ? names.guest || '' : names.host || '' }))
+    : suggestPoints(state.cards, state.chapters, state.slides.filter((s) => s.type === 'quote' || s.type === 'point').map((s) => s.text), want, totalDur());
+  if (!found.length) { $('pkHint').textContent = type === 'quote' ? 'No more stand-alone sentences found. Add one with the carousel icon on any word.' : 'No takeaways found. Name your chapters in the Marker tab, or add points by hand.'; return; }
+  snapshot();
+  found.forEach((f) => insertSlide({ id: uid(), type, text: f.text, sub: f.sub || '', solo: true, inCarousel: type === 'point', suggested: true }));
+  if (type === 'point') ensureCoverAndEnd();
+  persist(); renderPack();
+  $('pkHint').textContent = `Added ${found.length} suggested ${type}${found.length > 1 ? 's' : ''}. ${type === 'point' ? 'Rewrite them in your own words: ' : ''}Edit, untick or remove any that miss.`;
+}
+function addBlank(type) {
+  snapshot();
+  const sl = { id: uid(), type, text: '', sub: type === 'quote' ? (state.settings.names?.host || '') : '', solo: true, inCarousel: type === 'point' };
+  insertSlide(sl);
+  if (type === 'point') ensureCoverAndEnd();
+  persist(); renderPack();
+  const rows = $(type === 'quote' ? 'pkQuotes' : 'pkPoints').querySelectorAll('textarea');
+  const ta = [...rows].find((t, i) => state.slides.filter((s) => s.type === type)[i] === sl);
+  ta?.focus();
+}
+let packAbort = null;
+async function exportPack() {
+  errorBox($('pkError'), '');
+  await refreshPackTitle();
+  const plan = packPlan();
+  const { cfg, clips, quotes, points, car } = plan;
+  const needVideo = cfg.full || clips.length;
+  if (!plan.posts.length) { errorBox($('pkError'), 'Nothing is ticked yet.'); return; }
+  if (needVideo && !audioFile) { errorBox($('pkError'), 'Add the audio file first (under the preview).'); return; }
+  if (needVideo && !exportSupported()) { errorBox($('pkError'), 'This browser cannot make videos. Use the latest Chrome or Edge on a laptop or desktop.'); return; }
+  let root = null;
+  if (window.showDirectoryPicker) {
+    try { root = await window.showDirectoryPicker({ id: 'wdgta-pack', mode: 'readwrite', startIn: 'documents' }); }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const out = root ? await root.getDirectoryHandle(plan.folder, { create: true }) : null;
+  const subs = {};
+  const dirOf = async (path) => {
+    const parts = path.split('/'); const name = parts.pop();
+    if (!out) return { dir: null, name };
+    let d = out; for (const p of parts) { subs[p] = subs[p] || await d.getDirectoryHandle(p, { create: true }); d = subs[p]; }
+    return { dir: d, name };
+  };
+  const save = async (path, blob) => {
+    const { dir, name } = await dirOf(path);
+    if (dir) { const w = await (await dir.getFileHandle(name, { create: true })).createWritable(); await w.write(blob); await w.close(); }
+    else triggerDownload(blob, `${slug(plan.folder)}_${path.replace(/^\d+ [^/]+\//, '').replace(/\//g, '_')}`);
+  };
+  audio.pause();
+  $('pkExport').disabled = true; show($('pkCancel'), true); show($('pkBarWrap'), true);
+  packAbort = new AbortController();
+  const t0 = performance.now();
+  // progress: stills count as 2 s of video each
+  const stillW = 2;
+  const totalW = plan.videoSecs + (quotes.length + points.length) * 2 * stillW + car.length * stillW + 2;
+  let doneW = 0;
+  const bar = (extra = 0) => { $('pkBar').style.width = `${Math.min(100, (doneW + extra) / totalW * 100).toFixed(1)}%`; };
+  let compat = false;
+  try {
+    // 1. captions document and posting plan first, so they exist even if you stop the videos
+    $('pkHint').textContent = 'Writing Captions.docx…';
+    const parsed = cfg.reply.trim() ? parseCaptions(cfg.reply, plan.posts) : null;
+    const posts = fullCaptions(plan.posts, parsed, capCtx());
+    const made = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+    await save('Captions.docx', captionsDocx({ title: packTitle(), folder: plan.folder, posts, made }));
+    await save('Posting plan.csv', new Blob(['﻿' + postingPlanCSV(posts)], { type: 'text/csv' }));
+    doneW += 2; bar();
+    // 2. quotes and points as single posts
+    await loadFonts();
+    const ctaLine = packCtas()[0];
+    for (const [type, list] of [['quote', quotes], ['point', points]]) {
+      for (let i = 0; i < list.length; i++) {
+        if (packAbort.signal.aborted) throw new DOMException('cancelled', 'AbortError');
+        const key = `${type === 'quote' ? 'Q' : 'P'}${i + 1}`;
+        for (const f of plan.files[key]) {
+          $('pkHint').textContent = `Saving ${f.path}…`;
+          const blob = await renderSlide({ ...list[i], num: i + 1 }, 0, 1, deck({ single: true, size: f.fmt, cta: ctaLine }));
+          await save(f.path, blob); doneW += stillW; bar();
+        }
+      }
+    }
+    // 3. carousel: images and a PDF for LinkedIn
+    if (car.length) {
+      const jpgs = [];
+      for (let i = 0; i < car.length; i++) {
+        if (packAbort.signal.aborted) throw new DOMException('cancelled', 'AbortError');
+        $('pkHint').textContent = `Saving carousel slide ${i + 1} of ${car.length}…`;
+        await save(`05 Carousel/slide-${String(i + 1).padStart(2, '0')}.png`, await renderSlide(car[i], i, car.length, deck()));
+        jpgs.push(await renderSlide(car[i], i, car.length, deck(), 'image/jpeg'));
+        doneW += stillW; bar();
+      }
+      await save('05 Carousel/carousel-linkedin.pdf', await imagesToPdf(jpgs));
+    }
+    // 4. videos: clips first, the full episode last
+    if (needVideo) {
+      $('pkHint').textContent = 'Preparing audio…';
+      const buf = await getAudio48();
+      const bk = state.settings.bookends;
+      const intro = bk.introOn ? +bk.introSec || 3 : 0, outro = bk.outroOn ? +bk.outroSec || 4 : 0;
+      const jobs = [];
+      clips.forEach((c, i) => plan.files[`C${i + 1}`].forEach((f) => jobs.push({ start: c.start, end: c.end, title: c.title || state.title, full: false, f, path: f.path })));
+      if (cfg.full) jobs.push({ start: 0, end: totalDur(), title: state.title, full: true, f: { fmt: '16x9' }, path: plan.files.FULL[0].path });
+      for (let j = 0; j < jobs.length; j++) {
+        const jb = jobs[j];
+        const { dir, name } = await dirOf(jb.path);
+        const writable = dir ? await (await dir.getFileHandle(name, { create: true })).createWritable() : null;
+        const len = jb.end - jb.start, start = performance.now();
+        const res = await renderMp4({
+          cards: state.cards, fmt: FORMATS[jb.f.fmt], audioBuffer: buf, start: jb.start, end: jb.end, intro, outro, speech,
+          style: styleObj({ title: state.settings.showTitle ? jb.title : '', bookends: { ...bk, headline: bk.headline || (jb.full ? '' : jb.title) } }),
+          level: state.settings.exportLevel !== false ? -14 : null,
+          music: musicBuf ? { buffer: musicBuf, vol: state.settings.music.vol, duck: state.settings.music.duck } : null,
+          writable, signal: packAbort.signal,
+          onProgress: (p) => {
+            const el = (performance.now() - start) / 1000;
+            const left = p > 0.03 ? ` · about ${fmtTime(el / p * (1 - p))} left on this one` : '';
+            bar(len * p);
+            $('pkHint').textContent = `Video ${j + 1} of ${jobs.length}: ${jb.path}${left}`;
+          },
+        });
+        if (res.blob) triggerDownload(res.blob, `${slug(plan.folder)}_${name}`);
+        if (res.audioCodec === 'opus' || res.videoCodec === 'vp9') compat = true;
+        doneW += len; bar();
+        // subtitles for this video
+        if (jb.full || jb.f.fmt === '9x16') {
+          const cues = subtitleCues(state.cards, jb.start, jb.end, intro);
+          const subPath = jb.path.replace(/_(9x16|16x9)\.mp4$/, '.srt');
+          await save(subPath, new Blob([toSRT(cues)], { type: 'application/x-subrip' }));
+        }
+      }
+    }
+    bar(); const secs = (performance.now() - t0) / 1000;
+    $('pkHint').textContent = (root ? `Done in ${fmtTime(secs)}. Everything is in “${plan.folder}” inside the folder you chose. Open Captions.docx for the captions.` : `Done in ${fmtTime(secs)}. This browser cannot make folders, so the files went to Downloads, each starting with “${slug(plan.folder)}”.`) +
+      (compat ? ' This browser could not use the standard H.264/AAC formats, so some apps may reject the videos. For best results export from Chrome or Edge on Windows or Mac.' : '');
+  } catch (e) {
+    if (e.name === 'AbortError') $('pkHint').textContent = 'Stopped. Files already saved are still in the folder.';
+    else { console.error(e); errorBox($('pkError'), `The pack stopped: ${e.message || e}`); }
+  } finally {
+    $('pkExport').disabled = false; show($('pkCancel'), false); packAbort = null;
+  }
+}
+function bindPack() {
+  const cfgSet = (k, v) => { pk()[k] = v; persist(); packSummary(); };
+  $('pkFolder').addEventListener('input', (e) => cfgSet('folder', e.target.value.trim()));
+  $('pkFull').onchange = (e) => cfgSet('full', e.target.checked);
+  $('pkCarousel').onchange = (e) => { cfgSet('carousel', e.target.checked); renderPack(); };
+  $('pkTags').addEventListener('input', (e) => cfgSet('hashtags', e.target.value));
+  $('pkCtas').addEventListener('input', (e) => { cfgSet('ctas', e.target.value); if (previewMode?.single) drawPreview(); });
+  $('pkReply').addEventListener('input', () => readReply(true));
+  $('pkCopy').onclick = copyPackPrompt;
+  $('pkSugClips').onclick = suggestMoreClips;
+  $('pkSugQuotes').onclick = () => suggestMore('quote');
+  $('pkSugPoints').onclick = () => suggestMore('point');
+  $('pkAddQuote').onclick = () => addBlank('quote');
+  $('pkAddPoint').onclick = () => addBlank('point');
+  $('pkExport').onclick = exportPack;
+  $('pkCancel').onclick = () => packAbort?.abort();
+  $('pkPrevExit').onclick = exitPreviewMode;
 }
 
 // ---------------- captions ----------------
@@ -2053,7 +2415,8 @@ function bind() {
   // export extras
   $('exSubs').onchange = (e) => { state.settings.exportSubs = e.target.checked; persist(); };
   $('exLevel').onchange = (e) => { state.settings.exportLevel = e.target.checked; persist(); };
-  $('btnPack').onclick = () => doExport('weekly');
+  $('btnPack').onclick = () => setTab('pack');
+  bindPack();
   $('optAnim').onchange = (e) => { state.settings.anim = e.target.value; persist(); drawPreview(); };
   $('btnSafe').onclick = () => { ui.safe = !ui.safe; applyLayout(); drawPreview(); };
   $('btnProjects').onclick = () => { renderProjects(); $('projDialog').showModal(); };

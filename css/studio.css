@@ -655,3 +655,39 @@ body:not([data-module="studio"]) .guests-only { display: block; }
 .ib-yellow[aria-pressed="true"] { border-color: var(--yellow); }
 .ib-yellow[aria-pressed="true"] .ib-swatch { background: var(--yellow); }
 .wb-tools .wordbar-time { margin-left: auto; }
+
+/* ---------------- slide backgrounds ---------------- */
+.slide-bgs { display: flex; gap: 8px; }
+.slide-bg { width: 34px; height: 34px; }
+.slide-opts { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--soft); }
+.slide-list li.not-in-carousel { border-style: dashed; }
+
+/* ---------------- Pack tab ---------------- */
+.pack-panel .label { margin: 0; }
+.pk-sec { border-top: 1px solid var(--line); padding-top: 12px; }
+.pk-head { display: flex; align-items: center; gap: 6px; }
+.pk-head h3 { flex: 1; font-size: 12px; }
+.pk-count { color: var(--faint); font-size: 11px; font-weight: 400; margin-left: 6px; text-transform: none; letter-spacing: 0; }
+.pk-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.pk-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px; background: var(--deep); border: 1px solid var(--line); border-radius: var(--radius); }
+.pk-row.is-off { opacity: .55; }
+.pk-row > input[type=checkbox] { margin-top: 6px; }
+.pk-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pk-main input[type=text], .pk-main textarea { width: 100%; box-sizing: border-box; font-size: 13px; }
+.pk-main textarea { resize: vertical; }
+.pk-main .check.small { font-size: 12px; color: var(--soft); }
+.pk-meta { font-size: 11px; color: var(--muted); }
+.pk-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.pk-side .x-btn { min-width: 30px; font-size: 11px; }
+.tag.is-yours { color: var(--yellow); border-color: rgba(255, 199, 16, .5); }
+.tag.is-sug { color: var(--muted); border-style: dashed; }
+.pk-steps { margin: 4px 0; padding-left: 18px; font-size: 12.5px; color: var(--soft); display: flex; flex-direction: column; gap: 6px; }
+.pack-panel #pkReply { width: 100%; box-sizing: border-box; font: 12px/1.4 var(--mono); resize: vertical; }
+.pk-go { border-top: 1px solid var(--line-2); padding-top: 12px; }
+.pk-summary { margin: 0 0 8px; font-size: 13px; color: var(--soft); line-height: 1.45; }
+.pk-summary b { color: var(--text); }
+.pk-back { align-self: flex-start; }
+/* seven inspector tabs: let them scroll sideways instead of clipping */
+.tabs { overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { flex: 1 0 auto; padding-inline: 7px; white-space: nowrap; }

@@ -187,10 +187,10 @@ export async function renderMp4({ cards, style, fmt, audioBuffer, start = 0, end
 }
 
 /** Render one carousel slide (1080×1350) as a PNG. */
-export async function renderSlide(slide, index, total, deck) {
-  const canvas = new OffscreenCanvas(1080, 1350);
+export async function renderSlide(slide, index, total, deck, type = 'image/png') {
+  const canvas = new OffscreenCanvas(1080, deck.size === '9x16' ? 1920 : 1350);
   drawSlide(canvas.getContext('2d', { alpha: false }), slide, index, total, deck);
-  return canvas.convertToBlob({ type: 'image/png' });
+  return canvas.convertToBlob(type === 'image/jpeg' ? { type, quality: 0.92 } : { type });
 }
 
 /** Render a single frame as a PNG (for quote cards, carousel slides, thumbnails). */

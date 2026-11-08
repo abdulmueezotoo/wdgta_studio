@@ -137,7 +137,7 @@ const CUES = [
   [/\b(decided|decision|chose|choose|bet)\b/i, 'Decision'],
   [/\b(customer|customers|market|price|pricing|money|cash|revenue|profit|funding|investor|grant)\b/i, 'Business'],
 ];
-function sentences(cards) {
+export function sentences(cards) {
   const words = cards.flatMap((c) => c.words);
   const out = [];
   let cur = [];
@@ -280,13 +280,24 @@ function paintLines(ctx, lines, x, y, size, lh, theme, baseColor) {
   return y + lines.length * size * lh;
 }
 
+// Quotes, points and carousels sit on calm backgrounds; yellow is only an accent.
+export const SLIDE_BGS = {
+  ink: { ...THEMES.ink, accent: '#FFC710', name: 'Ink' },
+  black: { ...THEMES.black, accent: '#FFC710', name: 'Black' },
+  white: { name: 'White', bg: '#FFFFFF', text: '#0E0E0C', dim: '#E4E1DA', meta: '#55524B', track: '#E4E1DA', fill: '#0E0E0C', key: '#0E0E0C', keyBg: '#FFC710', keyStyle: 'block', marker: '#0E0E0C', accent: '#E0A800', logo: 'black' },
+};
+export const SLIDE_SIZES = { '4x5': { w: 1080, h: 1350 }, '9x16': { w: 1080, h: 1920 } };
+
 /**
- * Draw one 1080×1350 carousel slide.
+ * Draw one carousel slide or single post (4:5 1080×1350, or 9:16 1080×1920 with deck.size).
  * slide: {type, text, sub}; deck: {series, bg, logoLight, logoDark, logo, upper}
  */
 export function drawSlide(ctx, slide, index, total, deck) {
-  const W = 1080, H = 1350, M = 96;
-  const theme = THEMES[deck.bg] || THEMES.ink;
+  const W = 1080, H = (SLIDE_SIZES[deck.size] || SLIDE_SIZES['4x5']).h, M = 96;
+  const theme = SLIDE_BGS[deck.slideBg] || SLIDE_BGS.ink;
+  const accent = theme.accent || '#FFC710';
+  // 9:16 posts are Stories/Status: keep clear of the app's top and bottom bars and centre the content
+  const story = H > 1400, padT = story ? 150 : 0, padB = story ? 230 : 0, shift = story ? (H - padT - padB - 1350) / 2 + padT : 0;
   ctx.fillStyle = theme.bg; ctx.fillRect(0, 0, W, H);
   const logo = deck.logo || (theme.logo === 'black' ? deck.logoDark : deck.logoLight);
   const up = (s) => (deck.upper !== false ? String(s || '').toUpperCase() : String(s || ''));
@@ -296,26 +307,33 @@ export function drawSlide(ctx, slide, index, total, deck) {
   // header: logo + series
   if (logo && logo.complete && logo.naturalWidth) {
     const lw = 300, lh = lw * logo.naturalHeight / logo.naturalWidth;
-    ctx.drawImage(logo, M, M - 10, lw, lh);
+    ctx.drawImage(logo, M, M - 10 + padT, lw, lh);
   }
-  if (deck.badge) drawBadge(ctx, deck.badge, W - M, M - 6, 24, theme);
+  if (deck.badge) drawBadge(ctx, deck.badge, W - M, M - 6 + padT, 24, { ...theme, key: '#FFC710', bg: '#0E0E0C' });
   ctx.textBaseline = 'top';
   mono(24, theme.meta);
   const kicker = up(deck.series || '');
-  if (kicker) ctx.fillText(kicker, M, M + 120);
+  if (kicker) ctx.fillText(kicker, M, M + 120 + padT);
   resetLS();
 
-  // footer: handle + page / swipe
+  // footer: handle + page / swipe (a single post shows its call to action instead of page numbers)
+  const fy = H - M + 8 - padB;
   mono(24, theme.meta);
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText('@WEDEYGOTHROUGHAM', M, H - M + 8);
-  const right = index < total - 1 ? `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}  →` : `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`;
-  ctx.textAlign = 'right'; ctx.fillText(right, W - M, H - M + 8); ctx.textAlign = 'left';
-  resetLS();
-  ctx.fillStyle = theme.track; ctx.fillRect(M, H - M - 40, W - M * 2, 3);
-  ctx.fillStyle = theme.fill; ctx.fillRect(M, H - M - 40, (W - M * 2) * (index + 1) / total, 3);
+  ctx.fillText('@WEDEYGOTHROUGHAM', M, fy);
+  if (deck.single) {
+    if (deck.cta) { ctx.textAlign = 'right'; ctx.fillText(up(deck.cta), W - M, fy); ctx.textAlign = 'left'; }
+    resetLS();
+    ctx.fillStyle = theme.track; ctx.fillRect(M, fy - 48, W - M * 2, 3);
+  } else {
+    const right = index < total - 1 ? `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}  →` : `${String(index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`;
+    ctx.textAlign = 'right'; ctx.fillText(right, W - M, fy); ctx.textAlign = 'left';
+    resetLS();
+    ctx.fillStyle = theme.track; ctx.fillRect(M, fy - 48, W - M * 2, 3);
+    ctx.fillStyle = theme.fill; ctx.fillRect(M, fy - 48, (W - M * 2) * (index + 1) / total, 3);
+  }
 
-  const top = M + 200, bottom = H - M - 90, maxW = W - M * 2;
+  const top = M + 200 + shift, bottom = 1350 - M - 90 + shift, maxW = W - M * 2;
   const toks = tokens(up(slide.text));
   if (slide.type === 'cover') {
     const { size, lines } = fitText(ctx, toks, (s) => `900 ${s}px ${HEAD}`, maxW, (bottom - top) * 0.72, 150, 56, 1.0);
@@ -325,14 +343,14 @@ export function drawSlide(ctx, slide, index, total, deck) {
       wrapTokens(ctx, tokens(slide.sub), maxW).forEach((l, i) => ctx.fillText(l.items.map((t) => t.w).join(' '), M, y + 40 + i * 46));
     }
   } else if (slide.type === 'quote') {
-    ctx.font = `900 220px ${HEAD}`; ctx.fillStyle = theme.marker; ctx.textBaseline = 'top';
+    ctx.font = `900 220px ${HEAD}`; ctx.fillStyle = accent; ctx.textBaseline = 'top';
     ctx.fillText('“', M - 10, top - 30);
     const { size, lines } = fitText(ctx, toks, (s) => `900 ${s}px ${HEAD}`, maxW, (bottom - top - 260), 92, 40, 1.08);
     const y = paintLines(ctx, lines, M, top + 170, size, 1.08, theme, theme.text);
     if (slide.sub) { mono(26, theme.meta); ctx.textBaseline = 'top'; ctx.fillText(up('— ' + slide.sub), M, y + 40); resetLS(); }
   } else if (slide.type === 'point') {
     const n = String(slide.num || index).padStart(2, '0');
-    ctx.font = `900 150px ${HEAD}`; ctx.fillStyle = theme.dim; ctx.textBaseline = 'top';
+    ctx.font = `900 150px ${HEAD}`; ctx.fillStyle = accent; ctx.textBaseline = 'top';
     ctx.fillText(n, M - 6, top - 20);
     const { size, lines } = fitText(ctx, toks, (s) => `900 ${s}px ${HEAD}`, maxW, 300, 84, 40, 1.04);
     const y = paintLines(ctx, lines, M, top + 170, size, 1.04, theme, theme.text);
