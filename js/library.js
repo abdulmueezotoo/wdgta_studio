@@ -154,6 +154,16 @@ export async function folderReadJSON(dir, name) {
   if ((await dirPermission(dir)) !== 'granted') return null;
   try { return JSON.parse(await (await (await dir.getFileHandle(name)).getFile()).text()); } catch { return null; }
 }
+/** Every JSON file in the folder whose name passes `test`: [{ name, data }]. Files that cannot be read are skipped. */
+export async function folderFindJSON(dir, test) {
+  if ((await dirPermission(dir)) !== 'granted') return [];
+  const out = [];
+  for await (const [name, h] of dir.entries()) {
+    if (h.kind !== 'file' || !test(name)) continue;
+    try { out.push({ name, data: JSON.parse(await (await h.getFile()).text()) }); } catch { /* still syncing or not JSON */ }
+  }
+  return out;
+}
 export async function folderWriteJSON(dir, name, data) {
   if ((await dirPermission(dir)) !== 'granted') return false;
   await writeFile(dir, name, JSON.stringify(data, null, 2));

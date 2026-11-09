@@ -6,21 +6,23 @@ import {
 import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter.js';
 import { initGuests, refreshGuests, flushGuests, focusGuest } from './guests.js';
 import { initEpisodes, planEpisodeFor, flushEpisodes, focusEpisode } from './episodes.js';
-import { initCalendar, flushCalendar } from './calendar.js';
+import { initCalendar, flushCalendar, addOwnEntries } from './calendar.js';
 import { renderHome } from './home.js';
 import {
   saveProject as libSave, listProjects, getProject, deleteProject, putFile, getFile, deleteFile, storageEstimate,
   folderSupported, getDirHandle, setDirHandle, dirPermission, saveToFolder, scanFolder, persistStorage,
+  folderWriteJSON, folderFindJSON,
 } from './library.js';
 import {
   DEFAULT_DICTIONARY, applyDictionary, subtitleCues, toSRT, toVTT, CHAPTER_PRESETS, youtubeChapters,
   assignSpeakers, findHighlights, captionPrompt, speechRanges, isSpeaking, SLIDE_TYPES, SERIES, drawSlide, SLIDE_BGS,
 } from './features.js';
 import {
-  PACK_DEFAULTS, SIZES, folderName, suggestPackClips, suggestQuotes, suggestPoints, packPosts, captionsPrompt, parseCaptions,
+  PACK_DEFAULTS, SIZES, CAPTION_PLATFORMS, folderName, suggestPackClips, suggestQuotes, suggestPoints, packPosts, captionsPrompt, parseCaptions,
   fullCaptions, captionsDocx, postingPlanCSV, imagesToPdf,
 } from './pack.js';
-import { episodesData, episodeTitle } from './episodes.js';
+import { episodesData, episodeTitle, episodeLabel, updateEpisode } from './episodes.js';
+import { requestFileName, isKitFileFor, buildKitRequest, kitProblems, newestKit, kitCaptions, kitCalendarEntries } from './kit.js';
 
 const $ = (id) => document.getElementById(id);
 const STORE_KEY = 'wdgta-studio:last-project';
@@ -1701,6 +1703,8 @@ function renderPack() {
   $('pkCarLabel').textContent = n ? `Carousel · ${n} slide${n === 1 ? '' : 's'} as 4:5 images and a PDF for LinkedIn` : 'Carousel · no slides yet (points ticked "Also a carousel page" go here)';
   readReply(false);
   packSummary(plan);
+  renderKit();
+  checkKit(true);
 }
 function packSummary(plan = packPlan()) {
   const bits = [plan.clips.length && `${plan.clips.length} clip${plan.clips.length > 1 ? 's' : ''}`, plan.quotes.length && `${plan.quotes.length} quote${plan.quotes.length > 1 ? 's' : ''}`, plan.points.length && `${plan.points.length} point${plan.points.length > 1 ? 's' : ''}`, plan.car.length && 'carousel', plan.cfg.full && 'full episode'].filter(Boolean);
@@ -1713,7 +1717,7 @@ function readReply(save = true) {
   const cfg = pk();
   const plan = packPlan();
   if (save) { cfg.reply = $('pkReply').value; persist(); }
-  if (!cfg.reply.trim()) { $('pkCapStatus').textContent = 'No reply yet: the document will use simple template captions.'; return null; }
+  if (!cfg.reply.trim()) { $('pkCapStatus').textContent = cfg.kit ? 'Using the captions from the episode kit. A reply pasted here replaces them.' : 'No reply yet: the document will use simple template captions.'; return null; }
   const parsed = parseCaptions(cfg.reply, plan.posts);
   const got = plan.posts.filter((p) => parsed[p.id] && Object.keys(parsed[p.id]).length).length;
   $('pkCapStatus').textContent = got
@@ -1777,6 +1781,147 @@ function addBlank(type) {
   const ta = [...rows].find((t, i) => state.slides.filter((s) => s.type === type)[i] === sl);
   ta?.focus();
 }
+// ---------------- episode kit (one request to Claude, one kit back; see js/kit.js and KIT.md) ----------------
+const kitDir = () => (dirHandle && folderPerm === 'granted' ? dirHandle : null);
+async function linkedEpisode() {
+  try { return (await episodesData({})).find((x) => x.studioProject && x.studioProject === state.id) || null; } catch { return null; }
+}
+/** Captions for the pack: the kit's, with anything pasted into the reply box on top. */
+function packCaptions(plan) {
+  const cfg = plan.cfg;
+  const out = cfg.kit ? kitCaptions(cfg.kit, plan.posts) : {};
+  if (String(cfg.reply || '').trim()) {
+    const fromReply = parseCaptions(cfg.reply, plan.posts);
+    for (const id of Object.keys(fromReply)) out[id] = { ...(out[id] || {}), ...fromReply[id] };
+  }
+  return Object.keys(out).length ? out : null;
+}
+const kitStatus = (msg) => { $('pkKitStatus').textContent = msg; };
+async function askKit() {
+  if (!state.cards.length) { kitStatus('Transcribe the recording first.'); return; }
+  ensureId();
+  await refreshPackTitle();
+  const plan = packPlan();
+  const ep = await linkedEpisode();
+  const req = buildKitRequest({
+    projectId: state.id, title: packTitle(), episode: ep,
+    guest: state.settings.names?.guest, host: state.settings.names?.host,
+    cards: state.cards, chapters: state.chapters, duration: totalDur(),
+    posts: plan.posts, cfg: plan.cfg, wants: CAPTION_PLATFORMS,
+  });
+  const name = requestFileName(state.id);
+  const dir = kitDir();
+  let saved = false;
+  if (dir) { try { saved = await folderWriteJSON(dir, name, req); } catch (e) { console.warn('[Kit] request not saved', e); } }
+  pk().kitAskedAt = req.requestedAt; persist();
+  if (saved) kitStatus(`Request saved as ${name} in "${dir.name}". When that folder is in Google Drive, tell Claude "run the WDGTA kit" (or leave it to the scheduled check). The kit shows up here by itself.`);
+  else {
+    triggerDownload(new Blob([JSON.stringify(req, null, 2)], { type: 'application/json' }), name);
+    kitStatus(`No projects folder is connected, so ${name} was downloaded. Attach it to a Claude chat and say "run the WDGTA kit", then use "Open a kit file" with what Claude sends back.`);
+  }
+}
+function applyKit(kit, how) {
+  const bad = kitProblems(kit, state.id);
+  if (bad.length) { kitStatus(bad[0]); return false; }
+  pk().kit = kit; persist();
+  renderKit(); readReply(false);
+  kitStatus(`${how} Made ${kitWhen(kit)}.`);
+  return true;
+}
+const kitWhen = (kit) => { const d = new Date(kit.madeAt || ''); return Number.isNaN(+d) ? 'at an unknown time' : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+let kitChecking = false, kitCheckedAt = 0;
+/** Look in the projects folder for a kit newer than the one in this project. */
+async function checkKit(quiet = false) {
+  const dir = kitDir();
+  if (!dir || !state.id) { if (!quiet) kitStatus('Connect a projects folder first (Projects → Choose projects folder), or use "Open a kit file".'); return; }
+  if (kitChecking || (quiet && Date.now() - kitCheckedAt < 15000)) return;
+  kitChecking = true; kitCheckedAt = Date.now();
+  try {
+    const id = state.id;
+    const found = await folderFindJSON(dir, isKitFileFor(id));
+    if (id !== state.id) return;
+    const kit = newestKit(found.map((f) => f.data), id);
+    const have = pk().kit;
+    if (kit && (!have || String(kit.madeAt || '') > String(have.madeAt || ''))) applyKit(kit, 'New kit loaded from the folder.');
+    else if (!quiet) kitStatus(have ? `No newer kit in "${dir.name}". Showing the one made ${kitWhen(have)}.` : pk().kitAskedAt ? `No kit in "${dir.name}" yet. Claude has not answered the request, or Google Drive is still syncing.` : `No kit in "${dir.name}" yet. Press "Ask Claude for the kit" first.`);
+  } catch (e) { if (!quiet) kitStatus(`Could not read the folder (${e.message || e}).`); }
+  finally { kitChecking = false; }
+}
+async function openKitFile(file) {
+  if (!file) return;
+  try { ensureId(); applyKit(JSON.parse(await file.text()), 'Kit loaded from the file.'); }
+  catch { kitStatus('That file could not be read as a kit.'); }
+}
+async function kitCopy(text, btn) {
+  try { await navigator.clipboard.writeText(text); if (btn) { const was = btn.textContent; btn.textContent = 'Copied'; setTimeout(() => { btn.textContent = was; }, 1200); } }
+  catch { kitStatus('Could not copy automatically. Select the text and copy it.'); }
+}
+function kitBlock(title, items, { action } = {}) {
+  const sec = document.createElement('div'); sec.className = 'kit-block';
+  const head = document.createElement('div'); head.className = 'kit-head';
+  const h = document.createElement('h4'); h.className = 'label'; h.textContent = title; head.append(h);
+  if (action) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small ghost'; b.textContent = action.label; b.onclick = () => action.fn(b); head.append(b); }
+  sec.append(head);
+  for (const it of items) {
+    const row = document.createElement('div'); row.className = 'kit-item';
+    const main = document.createElement('div'); main.className = 'kit-main';
+    if (it.tag) { const t = document.createElement('span'); t.className = 'kit-tag mono'; t.textContent = it.tag; main.append(t); }
+    const p = document.createElement('p'); p.className = 'kit-text'; p.textContent = it.text; main.append(p);
+    if (it.note) { const n = document.createElement('p'); n.className = 'kit-note'; n.textContent = it.note; main.append(n); }
+    row.append(main);
+    if (it.copy !== false) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn small ghost'; b.textContent = 'Copy'; b.onclick = () => kitCopy(it.text, b); row.append(b); }
+    sec.append(row);
+  }
+  return sec;
+}
+function renderKit() {
+  const box = $('pkKit');
+  const kit = pk().kit;
+  box.replaceChildren();
+  if (!kit) return;
+  const list = (v) => (Array.isArray(v) ? v : []).map((x) => String(x || '').trim()).filter(Boolean);
+  if (list(kit.questions).length) {
+    const q = kitBlock('Claude needs from you', list(kit.questions).map((text) => ({ text, copy: false })));
+    q.classList.add('is-ask'); box.append(q);
+  }
+  if (list(kit.titles).length) box.append(kitBlock('Title options', list(kit.titles).map((text) => ({ text }))));
+  if (list(kit.thumbnails).length) box.append(kitBlock('Thumbnail words', list(kit.thumbnails).map((text) => ({ text }))));
+  if (kit.youtubeDescription) box.append(kitBlock('YouTube description', [{ text: String(kit.youtubeDescription) }]));
+  if (kit.spotifyDescription) box.append(kitBlock('Spotify description', [{ text: String(kit.spotifyDescription) }]));
+  if (kit.showNotes) box.append(kitBlock('Show notes', [{ text: String(kit.showNotes) }], { action: { label: 'Save to episode', fn: saveKitNotes } }));
+  const promo = (Array.isArray(kit.promo) ? kit.promo : []).filter((x) => x && x.text);
+  if (promo.length) box.append(kitBlock('Promo playbook', promo.map((x) => ({ tag: x.play || '', text: String(x.text), note: x.needs ? `Needs: ${x.needs}` : '' }))));
+  const plan = (Array.isArray(kit.plan) ? kit.plan : []).filter((x) => x && Number.isFinite(Number(x.day)));
+  if (plan.length) {
+    const rows = plan.map((x) => ({ tag: Number(x.day) === 0 ? 'Release day' : `${Number(x.day) > 0 ? '+' : ''}${Number(x.day)} day${Math.abs(Number(x.day)) === 1 ? '' : 's'}`, text: `${x.what || x.post || 'Post'}${x.platforms ? ' → ' + (Array.isArray(x.platforms) ? x.platforms.join(', ') : x.platforms) : ''}`, note: x.note || '', copy: false }));
+    box.append(kitBlock('Posting plan', rows, { action: { label: 'Add to Calendar', fn: kitToCalendar } }));
+  }
+}
+async function saveKitNotes(btn) {
+  const ep = await linkedEpisode();
+  if (!ep) { kitStatus('Link this project to an episode first (Episodes → the episode → Studio project).'); return; }
+  if (ep.summary && ep.summary.trim() && ep.summary.trim() !== String(pk().kit.showNotes).trim() && btn.dataset.confirm !== '1') {
+    btn.dataset.confirm = '1'; btn.textContent = 'Replace the notes there?'; setTimeout(() => { btn.dataset.confirm = ''; btn.textContent = 'Save to episode'; }, 4000); return;
+  }
+  updateEpisode(ep.id, { summary: String(pk().kit.showNotes) });
+  await flushEpisodes();
+  btn.dataset.confirm = ''; btn.textContent = 'Saved'; setTimeout(() => { btn.textContent = 'Save to episode'; }, 1500);
+  kitStatus(`Show notes saved to ${episodeTitle(ep)}.`);
+}
+async function kitToCalendar(btn) {
+  await refreshPackTitle();
+  const plan = packPlan();
+  const ep = await linkedEpisode();
+  const today = new Date(); const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  // day 0 is the release date; for something already released (or with no date) the plan starts today
+  const base = ep?.releaseDate && ep.releaseDate >= iso ? ep.releaseDate : iso;
+  const posts = fullCaptions(plan.posts, packCaptions(plan), capCtx());
+  const entries = kitCalendarEntries(pk().kit, { projectId: state.id, base, posts, epLabel: ep ? episodeLabel(ep) : '' });
+  if (!entries.length) { kitStatus('This kit has no posting plan.'); return; }
+  const { added, updated } = await addOwnEntries(entries, { getDir: kitDir, notice });
+  btn.textContent = 'Added'; setTimeout(() => { btn.textContent = 'Add to Calendar'; }, 1500);
+  kitStatus(`${added} post${added === 1 ? '' : 's'} added to the Calendar${updated ? `, ${updated} updated` : ''}, starting ${new Date(base + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}. Each one has its caption and file names in the notes; Export to Google Calendar takes them to your phone.`);
+}
 let packAbort = null;
 async function exportPack() {
   errorBox($('pkError'), '');
@@ -1818,7 +1963,7 @@ async function exportPack() {
   try {
     // 1. captions document and posting plan first, so they exist even if you stop the videos
     $('pkHint').textContent = 'Writing Captions.docx…';
-    const parsed = cfg.reply.trim() ? parseCaptions(cfg.reply, plan.posts) : null;
+    const parsed = packCaptions(plan);
     const posts = fullCaptions(plan.posts, parsed, capCtx());
     const made = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
     await save('Captions.docx', captionsDocx({ title: packTitle(), folder: plan.folder, posts, made }));
@@ -1915,6 +2060,10 @@ function bindPack() {
   $('pkExport').onclick = exportPack;
   $('pkCancel').onclick = () => packAbort?.abort();
   $('pkPrevExit').onclick = exitPreviewMode;
+  $('pkKitAsk').onclick = askKit;
+  $('pkKitCheck').onclick = () => checkKit(false);
+  $('pkKitLoad').onclick = () => $('pkKitFile').click();
+  $('pkKitFile').onchange = (e) => { openKitFile(e.target.files[0]); e.target.value = ''; };
 }
 
 // ---------------- captions ----------------

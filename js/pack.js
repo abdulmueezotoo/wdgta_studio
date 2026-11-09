@@ -10,7 +10,7 @@ export const PACK_DEFAULTS = {
   ctas: 'Share this with a founder\nFollow for more',
   full: true, carousel: true,
   clipTarget: 8, clipLen: 45,
-  folder: '', reply: '', captions: null,
+  folder: '', reply: '', captions: null, kit: null, kitAskedAt: '',
 };
 // what each kind of post is exported as, and where it goes
 export const SIZES = {
@@ -20,7 +20,7 @@ export const SIZES = {
   carousel: [{ fmt: '4x5', use: 'Instagram & Facebook carousel' }, { fmt: 'pdf', use: 'LinkedIn document post' }],
 };
 // which platforms get a caption for each kind of post
-const CAPTION_PLATFORMS = {
+export const CAPTION_PLATFORMS = {
   full: ['YouTube title', 'YouTube description'],
   clip: ['Instagram', 'TikTok', 'YouTube Shorts title', 'Facebook', 'LinkedIn'],
   quote: ['Instagram', 'Facebook', 'LinkedIn'],

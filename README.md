@@ -65,6 +65,7 @@ The **Pack** tab gathers a week of posts for one episode. **Export pack** saves 
 - **Carousel.** The slides ticked "In carousel", saved as 4:5 images plus `carousel-linkedin.pdf` for LinkedIn document posts.
 - **Full episode** in 16:9 for YouTube, with subtitles. It's made last, so the short pieces are ready first.
 - **Backgrounds.** Quotes, points and carousel slides sit on Ink, Black or White (Carousel tab → Background). Yellow is only an accent there.
+- **Episode kit.** Press **Ask Claude for the kit** and Studio saves one request file in the projects folder. Claude answers with one kit file: title options, thumbnail words, YouTube and Spotify descriptions, a caption for every post, the promo playbook and a posting plan. With the projects folder inside Google Drive there is nothing to copy or paste; the kit loads by itself. **Add to Calendar** turns the posting plan into Calendar entries with each caption in the notes. Details in [KIT.md](KIT.md).
 - **Captions.** Set your hashtags and calls to action, then press **Copy for Claude**, paste the prompt into Claude, and paste the reply back. `Captions.docx` lists every post with its files and a caption for each platform: Instagram, TikTok, YouTube, Facebook and LinkedIn. `Posting plan.csv` has the same in a spreadsheet. Any post without a caption from Claude gets a simple template caption.
 
 Folder layout:
@@ -150,6 +151,7 @@ Plain HTML, CSS and JavaScript modules: no build step, no server, no accounts.
 - `js/render.js`: the kinetic-typography renderer (shared by preview and export)
 - `js/transcribe-worker.js`: Whisper via [Transformers.js](https://github.com/huggingface/transformers.js) 3.7.6 (loaded from jsDelivr), runs in a Web Worker
 - `js/exporter.js`: WebCodecs H.264/AAC encoding (VP9/Opus fallback) and MP4 packaging
+- `js/pack.js`, `js/kit.js`: the weekly pack, and the request and kit files exchanged with Claude ([KIT.md](KIT.md))
 - `js/vendor/mp4-muxer.mjs`: [mp4-muxer](https://github.com/Vanilagy/mp4-muxer) 5.2.2 (MIT)
 - `fonts/`: Archivo, Archivo Black, IBM Plex Mono, Kalam (SIL Open Font License, via Fontsource)
 
