@@ -82,7 +82,7 @@ function items(all = false) {
   }
   for (const d of sundays(CAPSULE_FROM, CAPSULE_TO)) if (!capDates.has(d)) out.push({ key: `slot:${d}`, date: d, kind: 'capsule', slot: true, title: d < t ? 'No Capsule logged' : 'Open Capsule slot', sub: 'Capsule Sunday', src: 'slot', warn: '' });
   for (const m of MILESTONES) out.push({ key: `m:${m.date}`, date: m.date, kind: 'milestone', title: m.label, sub: 'Locked plan', src: 'milestone' });
-  for (const o of own) out.push({ key: `o:${o.id}`, date: o.date, kind: 'own', title: o.title || 'Untitled', sub: [o.type, o.time].filter(Boolean).join(' · '), time: o.time, src: 'own', ref: o.id, field: 'date', done: o.done });
+  for (const o of own) out.push({ key: `o:${o.id}`, date: o.date, kind: 'own', title: o.title || 'Untitled', sub: [o.type, o.time].filter(Boolean).join(' · '), time: o.time, notes: o.notes || '', src: 'own', ref: o.id, field: 'date', done: o.done });
   const order = { milestone: 0, release: 1, capsule: 2, recording: 3, discovery: 4, action: 5, own: 6 };
   return out.filter((i) => i.date && (all || !pref.hidden.includes(i.kind)))
     .sort((a, b) => a.date.localeCompare(b.date) || order[a.kind] - order[b.kind] || String(a.time || '').localeCompare(String(b.time || '')));
@@ -232,7 +232,7 @@ function exportICS() {
     lines.push('BEGIN:VEVENT', `UID:${i.key.replace(/[^a-z0-9:-]/gi, '')}@wdgta-os`, `DTSTAMP:${stamp}`);
     if (i.time) { const t = i.time.replace(':', '') + '00'; const endH = String(Math.min(23, Number(i.time.slice(0, 2)) + 1)).padStart(2, '0'); lines.push(`DTSTART:${d}T${t}`, `DTEND:${d}T${endH}${i.time.slice(3, 5)}00`); }
     else { lines.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${addDays(i.date, 1).replace(/-/g, '')}`); }
-    lines.push(fold(`SUMMARY:${icsEscape(summary)}`), fold(`DESCRIPTION:${icsEscape([i.sub, i.warn].filter(Boolean).join(' — '))}`), 'TRANSP:TRANSPARENT', 'END:VEVENT');
+    lines.push(fold(`SUMMARY:${icsEscape(summary)}`), fold(`DESCRIPTION:${icsEscape([[i.sub, i.warn].filter(Boolean).join(' — '), i.notes].filter(Boolean).join('\n\n'))}`), 'TRANSP:TRANSPARENT', 'END:VEVENT');
   }
   lines.push('END:VCALENDAR');
   const a = document.createElement('a');
@@ -260,6 +260,23 @@ export async function calendarItems(c = {}) {
   return items(true);
 }
 export function flushCalendar() { if (saveTimer) return flush(); }
+/**
+ * Add entries made by another module (the episode kit's posting plan). Each has a `ref`; adding the same
+ * ref again updates that entry instead of making a second one, and never touches one you ticked as done.
+ */
+export async function addOwnEntries(list, c = {}) {
+  ctx = { ...ctx, ...c };
+  if (!loaded) { await load(); loaded = true; }
+  let added = 0, updated = 0;
+  for (const e of list) {
+    const old = e.ref ? own.find((o) => o.ref === e.ref) : null;
+    if (old) { if (!old.done) { Object.assign(old, { date: e.date, time: e.time || '', title: e.title, type: e.type || old.type, notes: e.notes || '' }); updated++; } }
+    else { own.push({ id: uid(), ref: e.ref || '', date: e.date, title: e.title, type: e.type || 'Social post', time: e.time || '', notes: e.notes || '', done: false, createdAt: Date.now() }); added++; }
+  }
+  await flush();
+  if (bound) { renderAll(); renderDetail(); }
+  return { added, updated };
+}
 function bind() {
   bound = true;
   $('calPrev').onclick = () => shift(-1);

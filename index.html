@@ -443,6 +443,19 @@
           <label class="check"><input type="checkbox" id="pkFull"> Full episode · 16:9 for YouTube, with subtitles</label>
         </section>
 
+        <section class="group pk-sec" aria-labelledby="pkKitH">
+          <div class="pk-head"><h3 class="label" id="pkKitH">Episode kit</h3>
+            <button class="btn small ghost" id="pkKitCheck" type="button">Check</button></div>
+          <p class="hint">One request to Claude brings back title options, thumbnail words, descriptions, a caption for every post above, the promo playbook and a posting plan. With the projects folder inside Google Drive there is nothing to copy or paste.</p>
+          <div class="btn-row">
+            <button class="btn small" id="pkKitAsk" type="button">Ask Claude for the kit</button>
+            <button class="btn small ghost" id="pkKitLoad" type="button">Open a kit file</button>
+            <input type="file" id="pkKitFile" accept=".json,application/json" hidden>
+          </div>
+          <p class="hint" id="pkKitStatus" role="status"></p>
+          <div id="pkKit"></div>
+        </section>
+
         <section class="group pk-sec" aria-labelledby="pkCapH">
           <div class="pk-head"><h3 class="label" id="pkCapH">Captions</h3></div>
           <label class="gf"><span>Hashtags on every post</span><input type="text" id="pkTags" autocomplete="off"></label>
