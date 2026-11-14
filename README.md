@@ -76,6 +76,13 @@ Folder layout:
   01 Full episode/   02 Clips/   03 Quotes/   04 Points/   05 Carousel/
 ```
 
+## Keeping your work safe
+
+Everything is saved in this browser first. Clearing the browser, using another profile, or some cleanup apps can wipe it, so keep a second copy:
+
+- **Backup folder.** A red bar at the top shows whenever your work is only in the browser. Press **Choose backup folder** (or **Reconnect folder** after a restart) and pick a folder on your computer or in Google Drive. Studio projects, guests, episodes and calendar entries are saved there on every change. When you reconnect, anything in the folder that isn't in the browser comes back automatically; where both have the same item, the newer edit wins. If Chrome offers **Allow on every visit**, choose it, so you don't have to reconnect after each restart.
+- **Backup file.** Home → Your data → **Download a backup** saves one file with everything except recordings. **Restore from a backup** brings it back on any computer or browser and keeps anything already there.
+
 ## Home
 
 The app opens on **Home** (`#home`). Everything on it is read live from the other modules:

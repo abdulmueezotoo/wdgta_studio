@@ -4,9 +4,9 @@ import {
   loadFonts, resolveLayout, defaultLayout, setUserLayouts, suggestClips, drawBookend,
 } from './render.js';
 import { renderMp4, renderStill, renderSlide, exportSupported } from './exporter.js';
-import { initGuests, refreshGuests, flushGuests, focusGuest } from './guests.js';
-import { initEpisodes, planEpisodeFor, flushEpisodes, focusEpisode } from './episodes.js';
-import { initCalendar, flushCalendar, addOwnEntries } from './calendar.js';
+import { initGuests, refreshGuests, flushGuests, focusGuest, syncWithFolder as syncGuests, backupData as guestsBackup, restoreData as restoreGuests } from './guests.js';
+import { initEpisodes, planEpisodeFor, flushEpisodes, focusEpisode, syncWithFolder as syncEpisodes, backupData as episodesBackup, restoreData as restoreEpisodes } from './episodes.js';
+import { initCalendar, flushCalendar, addOwnEntries, syncWithFolder as syncCalendar, backupData as calendarBackup, restoreData as restoreCalendar } from './calendar.js';
 import { renderHome } from './home.js';
 import {
   saveProject as libSave, listProjects, getProject, deleteProject, putFile, getFile, deleteFile, storageEstimate,
@@ -2220,6 +2220,7 @@ function setFolderStatus(msg) {
   else if (folderPerm === 'granted') { st.textContent = `Saving every project to "${dirHandle.name}".`; btn.textContent = 'Change folder'; stop.hidden = false; }
   else { st.textContent = `"${dirHandle.name}" needs your permission again.`; btn.textContent = 'Reconnect folder'; stop.hidden = false; }
   if (msg) st.textContent = msg;
+  updateBackupBar();
   const need = dirHandle && folderPerm !== 'granted';
   show($('reconnectBox'), !!need);
   if (need) $('reconnectName').textContent = dirHandle.name;
@@ -2229,7 +2230,7 @@ async function chooseFolder() {
   if (dirHandle && folderPerm !== 'granted') {
     folderPerm = await dirPermission(dirHandle, true);
     setFolderStatus();
-    if (folderPerm === 'granted') { await flushSave({ audio: audioFile }); renderProjects(); renderRecent(); }
+    if (folderPerm === 'granted') { await flushSave({ audio: audioFile }); await syncAllModules(); renderProjects(); renderRecent(); }
     return;
   }
   try {
@@ -2238,8 +2239,9 @@ async function chooseFolder() {
     folderPerm = await dirPermission(h, true);
     setFolderStatus();
     if (state.id) await flushSave({ audio: audioFile, music: musicBuf ? $('musicFile').files[0] || null : null });
-    // also copy every project already in this browser into the folder
+    // also copy every project already in this browser into the folder, and Guests, Episodes and Calendar too
     await backupAllToFolder();
+    await syncAllModules();
     renderProjects(); renderRecent();
   } catch (e) { if (e.name !== 'AbortError') setFolderStatus(`Could not use that folder: ${e.message || e}`); }
 }
@@ -2292,6 +2294,55 @@ function folderRow(fp) {
   a.appendChild(open);
   li.append(t, m, a);
   return li;
+}
+
+// ---------------- keeping everything safe: backup bar, folder sync, backup files ----------------
+const backupDir = () => (dirHandle && folderPerm === 'granted' ? dirHandle : null);
+function updateBackupBar() {
+  const bar = $('backupBar'); if (!bar) return;
+  let msg = '', btn = '', tone = 'warn';
+  if (!folderSupported()) { msg = 'This browser cannot save to a backup folder. Download a backup regularly so nothing is lost.'; tone = 'warn'; }
+  else if (!dirHandle) { msg = 'Your work is only saved inside this browser. Choose a backup folder so a restart or a cleared browser can’t lose it.'; btn = 'Choose backup folder'; }
+  else if (folderPerm !== 'granted') { msg = `Backups to “${dirHandle.name}” are paused until you reconnect it. Your changes are only in this browser right now.`; btn = 'Reconnect folder'; }
+  bar.hidden = !msg;
+  bar.dataset.tone = tone;
+  $('backupMsg').textContent = msg;
+  $('backupBtn').hidden = !btn; $('backupBtn').textContent = btn;
+  const st = $('hDataStatus');
+  if (st) st.textContent = dirHandle && folderPerm === 'granted'
+    ? `Everything (Studio projects, guests, episodes, calendar) is saved in this browser and in “${dirHandle.name}”.`
+    : dirHandle ? `Backups to “${dirHandle.name}” are paused. Reconnect it from the bar at the top.` : 'Saved in this browser only. Choose a backup folder from the bar at the top.';
+}
+/** After the folder is connected: bring back anything saved there and save everything here into it. */
+async function syncAllModules() {
+  const dir = backupDir(); if (!dir) return;
+  const c = { getDir: backupDir, notice };
+  try {
+    const [g, e, k] = await Promise.all([syncGuests(c), syncEpisodes(c), syncCalendar(c)]);
+    const back = [g && `${g} guest${g === 1 ? '' : 's'}`, e && `${e} episode${e === 1 ? '' : 's'}`, k && `${k} calendar entr${k === 1 ? 'y' : 'ies'}`].filter(Boolean);
+    if (back.length) notice(`Brought back ${back.join(', ')} from “${dir.name}”.`, 7000);
+    if (currentModule !== 'studio') route();
+  } catch (err) { console.warn('[Backup] sync failed', err); }
+}
+async function downloadBackup() {
+  const projects = [];
+  for (const p of await listProjects().catch(() => [])) { const d = await getProject(p.id).catch(() => null); if (d) projects.push(d); }
+  const data = { app: 'wdgta-os', kind: 'full-backup', version: 1, savedAt: new Date().toISOString(),
+    guests: await guestsBackup(), episodes: await episodesBackup(), calendar: await calendarBackup(), projects };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  triggerDownload(blob, `wdgta-backup-${new Date().toISOString().slice(0, 10)}.json`);
+  notice(`Backup saved: ${data.guests.length} guests, ${data.episodes.length} episodes, ${data.calendar.length} calendar entries, ${projects.length} Studio projects (recordings are not included; keep your audio files).`, 9000);
+}
+async function restoreBackup(file) {
+  let d;
+  try { d = JSON.parse(await file.text()); } catch { notice('That file is not a WDGTA backup.', 5000); return; }
+  if (!d || (d.kind !== 'full-backup' && !d.guests && !d.episodes)) { notice('That file is not a WDGTA backup.', 5000); return; }
+  const g = await restoreGuests(d.guests || []), e = await restoreEpisodes(d.episodes || []), k = await restoreCalendar(d.entries || d.calendar || []);
+  let p = 0;
+  const have = new Set((await listProjects().catch(() => [])).map((x) => x.id));
+  for (const pr of d.projects || []) { if (pr && pr.id && !have.has(pr.id)) { try { await libSave(pr); p++; } catch {} } }
+  notice(`Restored ${g} guests, ${e} episodes, ${k} calendar entries and ${p} Studio projects. Anything already here was kept.`, 8000);
+  renderRecent(); route();
 }
 
 // ---------------- keyboard editing at the playhead ----------------
@@ -2570,6 +2621,10 @@ function bind() {
   $('btnSafe').onclick = () => { ui.safe = !ui.safe; applyLayout(); drawPreview(); };
   $('btnProjects').onclick = () => { renderProjects(); $('projDialog').showModal(); };
   $('folderBtn').onclick = chooseFolder;
+  $('backupBtn').onclick = chooseFolder;
+  $('hBackup').onclick = downloadBackup;
+  $('hRestore').onclick = () => $('hRestoreFile').click();
+  $('hRestoreFile').onchange = (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) restoreBackup(f); };
   $('folderStop').onclick = stopFolder;
   $('reconnectBtn').onclick = chooseFolder;
   $('btnKeys').onclick = () => $('keysDialog').showModal();
@@ -2733,5 +2788,5 @@ if (!window.showDirectoryPicker) $('destHint').textContent = 'This browser can o
 // test hook (used by automated checks; harmless for users)
 window.__studio = {
   state, loadState, setAudio, FORMATS, defaultLayout, audio,
-  _useFolder: async (h) => { dirHandle = h; await setDirHandle(h); folderPerm = await dirPermission(h, true); setFolderStatus(); await flushSave({ audio: audioFile }); },
+  _useFolder: async (h) => { dirHandle = h; await setDirHandle(h); folderPerm = await dirPermission(h, true); setFolderStatus(); await flushSave({ audio: audioFile }); await syncAllModules(); },
 };

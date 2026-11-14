@@ -47,6 +47,11 @@
       <input id="openFile" type="file" accept=".json,application/json" hidden>
     </div>
   </header>
+  <div class="backup-bar" id="backupBar" role="status" hidden>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <span id="backupMsg"></span>
+    <button class="btn small primary" id="backupBtn" type="button">Choose backup folder</button>
+  </div>
 
   <div class="notice" id="resume" hidden></div>
 
@@ -571,6 +576,16 @@
       <section aria-labelledby="hDoorsH" class="h-sec">
         <h2 class="h-label" id="hDoorsH">OPEN A MODULE</h2>
         <div class="h-doors" id="hDoors"></div>
+      </section>
+      <section aria-labelledby="hDataH" class="h-sec h-data">
+        <h2 class="h-label" id="hDataH">YOUR DATA</h2>
+        <p class="h-ml" id="hDataStatus"></p>
+        <div class="btn-row">
+          <button class="btn small" id="hBackup" type="button">Download a backup</button>
+          <button class="btn small ghost" id="hRestore" type="button">Restore from a backup</button>
+          <input type="file" id="hRestoreFile" accept=".json,application/json" hidden>
+        </div>
+        <p class="hint">A backup is one file with all your guests, episodes, calendar entries and Studio projects (not the recordings). Keep a copy somewhere safe, like Google Drive.</p>
       </section>
     </div>
   </main>

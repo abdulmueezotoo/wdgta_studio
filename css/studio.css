@@ -701,3 +701,9 @@ body:not([data-module="studio"]) .guests-only { display: block; }
 .tabs { overflow-x: auto; overflow-y: hidden; flex-shrink: 0; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
 .tabs button { flex: 1 0 auto; padding-inline: 7px; white-space: nowrap; }
+
+/* ---------------- backup bar ---------------- */
+.backup-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 16px; background: #3A1A10; border-bottom: 1px solid var(--marker); color: #FFD9CC; font-size: 13.5px; }
+.backup-bar svg { color: var(--marker); flex: none; }
+.backup-bar span { flex: 1 1 320px; }
+.h-data .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }

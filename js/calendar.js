@@ -1,7 +1,7 @@
 // WDGTA OS — module 04: Calendar. One view of every date in Guests and Episodes, the locked
 // milestones, and your own entries. Dates you move here are changed in Guests and Episodes too.
 
-import { getRecord, putRecord, folderReadJSON, folderWriteJSON } from './library.js';
+import { getRecord, putRecord, folderReadJSON, folderWriteJSON, mergeById } from './library.js';
 import { guestsData, updateGuest } from './guests.js';
 import { episodesData, updateEpisode, createEpisode, episodeLabel, episodeTitle, episodeWarnings, sundays, MILESTONES, CAPSULE_FROM, CAPSULE_TO } from './episodes.js';
 
@@ -327,7 +327,35 @@ function bind() {
     const del = e.target.closest('[data-del]');
     if (del) {
       if (del.dataset.confirm !== '1') { del.dataset.confirm = '1'; del.textContent = 'Confirm delete'; setTimeout(() => { del.dataset.confirm = ''; del.textContent = 'Delete'; }, 3000); return; }
-      own = own.filter((x) => `o:${x.id}` !== selId); selId = null; save(); renderAll(); renderDetail();
+      own.splice(0, own.length, ...own.filter((x) => `o:${x.id}` !== selId)); selId = null; save(); renderAll(); renderDetail();
     }
   });
+}
+
+// ---------------- backup folder and backup files ----------------
+/** Merge what's in the backup folder with what's in this browser (the newer edit of each item wins), then save both. */
+export async function syncWithFolder(c = {}) {
+  ctx = { ...ctx, ...c };
+  if (!loaded) { await load(); loaded = true; }
+  const dir = ctx.getDir();
+  if (!dir) return 0;
+  let f = null;
+  try { f = await folderReadJSON(dir, FILE); } catch {}
+  const before = own.length;
+  if (f && Array.isArray(f.entries)) own.splice(0, own.length, ...mergeById(own, f.entries));
+  await flush();
+  if (bound) { renderAll(); renderDetail(); }
+  return own.length - before;
+}
+/** Everything this module holds, for a full backup file. */
+export async function backupData() { if (!loaded) { await load(); loaded = true; } return JSON.parse(JSON.stringify(own)); }
+/** Bring in records from a backup file, keeping anything newer that is already here. */
+export async function restoreData(list) {
+  if (!loaded) { await load(); loaded = true; }
+  if (!Array.isArray(list)) return 0;
+  const before = own.length;
+  own.splice(0, own.length, ...mergeById(own, list));
+  await flush();
+  if (bound) { renderAll(); renderDetail(); }
+  return own.length - before;
 }

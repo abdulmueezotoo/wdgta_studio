@@ -169,3 +169,15 @@ export async function folderWriteJSON(dir, name, data) {
   await writeFile(dir, name, JSON.stringify(data, null, 2));
   return true;
 }
+
+/** Combine two lists of records with ids: every record from both is kept; where both have the same id, the newer edit wins. */
+export function mergeById(a = [], b = []) {
+  const t = (x) => x?.updatedAt || x?.createdAt || 0;
+  const map = new Map();
+  for (const x of [...a, ...b]) {
+    if (!x || !x.id) continue;
+    const cur = map.get(x.id);
+    if (!cur || t(x) > t(cur)) map.set(x.id, x);
+  }
+  return [...map.values()];
+}

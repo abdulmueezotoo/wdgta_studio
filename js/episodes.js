@@ -1,7 +1,7 @@
 // WDGTA OS — module 03: Episodes. Every episode and Capsule from plan to published, plus the release plan.
 // Local-first like Guests: kept in this browser and mirrored to the projects folder when one is connected.
 
-import { getRecord, putRecord, folderReadJSON, folderWriteJSON } from './library.js';
+import { getRecord, putRecord, folderReadJSON, folderWriteJSON, mergeById } from './library.js';
 import { guestsData, bumpGuest } from './guests.js';
 
 export const EP_STAGES = [
@@ -354,7 +354,35 @@ function bind() {
     const del = ev.target.closest('[data-del]');
     if (del) {
       if (del.dataset.confirm !== '1') { del.dataset.confirm = '1'; del.textContent = 'Confirm delete'; setTimeout(() => { del.dataset.confirm = ''; del.textContent = 'Delete'; }, 3000); return; }
-      eps = eps.filter((x) => x.id !== selId); selId = null; save(); renderAll(); renderDetail();
+      eps.splice(0, eps.length, ...eps.filter((x) => x.id !== selId)); selId = null; save(); renderAll(); renderDetail();
     }
   });
+}
+
+// ---------------- backup folder and backup files ----------------
+/** Merge what's in the backup folder with what's in this browser (the newer edit of each item wins), then save both. */
+export async function syncWithFolder(c = {}) {
+  ctx = { ...ctx, ...c };
+  if (!loaded) { await load(); loaded = true; }
+  const dir = ctx.getDir();
+  if (!dir) return 0;
+  let f = null;
+  try { f = await folderReadJSON(dir, FILE); } catch {}
+  const before = eps.length;
+  if (f && Array.isArray(f.episodes)) eps.splice(0, eps.length, ...mergeById(eps, f.episodes));
+  await flush();
+  if (bound) { renderAll(); renderDetail(); }
+  return eps.length - before;
+}
+/** Everything this module holds, for a full backup file. */
+export async function backupData() { if (!loaded) { await load(); loaded = true; } return JSON.parse(JSON.stringify(eps)); }
+/** Bring in records from a backup file, keeping anything newer that is already here. */
+export async function restoreData(list) {
+  if (!loaded) { await load(); loaded = true; }
+  if (!Array.isArray(list)) return 0;
+  const before = eps.length;
+  eps.splice(0, eps.length, ...mergeById(eps, list));
+  await flush();
+  if (bound) { renderAll(); renderDetail(); }
+  return eps.length - before;
 }

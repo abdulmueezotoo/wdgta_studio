@@ -1,7 +1,7 @@
 // WDGTA OS — module 02: Guests. A pipeline of founders from first contact to published episode.
 // Local-first: kept in this browser (IndexedDB) and mirrored to the projects folder when one is connected.
 
-import { getRecord, putRecord, folderReadJSON, folderWriteJSON } from './library.js';
+import { getRecord, putRecord, folderReadJSON, folderWriteJSON, mergeById } from './library.js';
 
 export const STAGES = [
   { id: 'prospect', name: 'Prospect', hint: 'Someone worth inviting' },
@@ -376,7 +376,7 @@ function bind() {
     const del = e.target.closest('[data-del]');
     if (del) {
       if (del.dataset.confirm !== '1') { del.dataset.confirm = '1'; del.textContent = 'Confirm delete'; setTimeout(() => { del.dataset.confirm = ''; del.textContent = 'Delete'; }, 3000); return; }
-      guests = guests.filter((x) => x.id !== selId); selId = null; save(); renderAll(); renderDetail();
+      guests.splice(0, guests.length, ...guests.filter((x) => x.id !== selId)); selId = null; save(); renderAll(); renderDetail();
     }
   });
 }
@@ -406,3 +406,31 @@ export function updateGuest(id, patch) {
 export async function focusGuest(id) { if (guests.some((g) => g.id === id)) await select(id); }
 export async function refreshGuests() { renderAll(); await renderDetail(); }
 export function flushGuests() { if (saveTimer) return flush(); }
+
+// ---------------- backup folder and backup files ----------------
+/** Merge what's in the backup folder with what's in this browser (the newer edit of each item wins), then save both. */
+export async function syncWithFolder(c = {}) {
+  ctx = { ...ctx, ...c };
+  if (!loaded) { await load(); loaded = true; }
+  const dir = ctx.getDir();
+  if (!dir) return 0;
+  let f = null;
+  try { f = await folderReadJSON(dir, FILE); } catch {}
+  const before = guests.length;
+  if (f && Array.isArray(f.guests)) guests.splice(0, guests.length, ...mergeById(guests, f.guests));
+  await flush();
+  if (bound) { renderAll(); renderDetail(); }
+  return guests.length - before;
+}
+/** Everything this module holds, for a full backup file. */
+export async function backupData() { if (!loaded) { await load(); loaded = true; } return JSON.parse(JSON.stringify(guests)); }
+/** Bring in records from a backup file, keeping anything newer that is already here. */
+export async function restoreData(list) {
+  if (!loaded) { await load(); loaded = true; }
+  if (!Array.isArray(list)) return 0;
+  const before = guests.length;
+  guests.splice(0, guests.length, ...mergeById(guests, list));
+  await flush();
+  if (bound) { renderAll(); renderDetail(); }
+  return guests.length - before;
+}
